@@ -1,68 +1,59 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>FormApp — Mini App</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 16px; }
-    .card { border: 1px solid #e6e6e6; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-    input, button { font-size: 16px; }
-    button { padding: 12px 16px; border-radius: 10px; border: none; }
-  </style>
-</head>
-<body>
-  <h1>Welcome to <b>FormApp</b> 👋</h1>
+// server.js — версия с webhook (без bot.launch / getUpdates)
+require('dotenv').config();
 
-  <div class="card" id="userBox">Loading user…</div>
+const express = require('express');
+const path = require('path');
+const { Telegraf, Markup } = require('telegraf');
 
-  <div class="card">
-    <label>Text to publish in chat:</label><br/>
-    <input id="msg" value="This message came from the Mini App!" style="width:100%; padding:8px; margin:8px 0;" />
-    <button id="publish">Publish to chat (answerWebAppQuery)</button>
-  </div>
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PUBLIC_URL = process.env.PUBLIC_URL;
 
-  <div class="card">
-    <button id="sendData">Send data to bot (sendData)</button>
-  </div>
+if (!BOT_TOKEN) {
+  console.error('❌ No BOT_TOKEN in env'); process.exit(1);
+}
+if (!PUBLIC_URL) {
+  console.error('❌ No PUBLIC_URL in env'); process.exit(1);
+}
 
-  <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
-    tg.setHeaderColor('secondary_bg_color');
+const bot = new Telegraf(BOT_TOKEN);
 
-    const u = tg.initDataUnsafe?.user;
-    document.getElementById('userBox').innerText =
-      u ? `You are: ${u.first_name} ${u.last_name||''} (@${u.username||'—'})`
-        : 'Open this page inside Telegram.';
+// /start — даём кнопку для Mini App
+bot.start(async (ctx) => {
+  await ctx.reply(
+    'Welcome! Tap to open 👇',
+    Markup.inlineKeyboard([ Markup.button.webApp('Open Mini App (inline)', PUBLIC_URL) ])
+  );
+});
 
-    fetch('/auth/tma', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initData: tg.initData })
-    })
-    .then(r => r.json())
-    .then(j => { if (!j.ok) alert('Server could not validate initData. Please open via Telegram.'); })
-    .catch(()=>{});
+// простой echo для проверки
+bot.on('text', async (ctx) => {
+  await ctx.reply(`You said: ${ctx.message.text}`);
+});
 
-    document.getElementById('publish').onclick = async () => {
-      const text = document.getElementById('msg').value;
-      const qid = tg.initDataUnsafe?.query_id;
-      if (!qid) { alert('Open via the inline button under bot message to get query_id.'); return; }
-      const res = await fetch('/api/publish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query_id: qid, text })
-      }).then(r => r.json());
-      if (res?.ok) tg.close(); else alert('Publish failed');
-    };
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
 
-    document.getElementById('sendData').onclick = () => {
-      const payload = JSON.stringify({ hello: 'from mini app', ts: Date.now() });
-      tg.sendData(payload);
-    };
-  </script>
-</body>
-</html>
+// отдать страницу Mini App
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// === Webhook ===
+// стабильный путь вебхука — привязываем к токену
+const WEBHOOK_PATH = `/tg/${BOT_TOKEN}`;
+const WEBHOOK_URL  = `${PUBLIC_URL}${WEBHOOK_PATH}`;
+
+// Telegram будет слать апдейты сюда:
+app.post(WEBHOOK_PATH, (req, res) => {
+  bot.handleUpdate(req.body, res);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+  console.log(`🌐 HTTP server on ${PORT}`);
+  try { await bot.telegram.deleteWebhook(); } catch (e) { /* ignore */ }
+  await bot.telegram.setWebhook(WEBHOOK_URL);
+  console.log(`✅ Webhook set: ${WEBHOOK_URL}`);
+});
