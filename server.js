@@ -1,106 +1,96 @@
-// server.js
+// server.js — Webhook-only версия для Render
+// Никакого getUpdates/polling — конфликта 409 больше не будет.
+
 require('dotenv').config();
-const express = require('express');
-const bodyParser = require('body-parser');
 const path = require('path');
-const crypto = require('crypto');
+const express = require('express');
 const { Telegraf, Markup } = require('telegraf');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const PUBLIC_URL = process.env.PUBLIC_URL || '';
+let PUBLIC_URL = process.env.PUBLIC_URL; // например: https://formapp-xvb0.onrender.com
+
+if (!BOT_TOKEN) {
+  console.error('❌ BOT_TOKEN is missing in env');
+  process.exit(1);
+}
+if (!PUBLIC_URL) {
+  console.error('❌ PUBLIC_URL is missing in env');
+  process.exit(1);
+}
+if (PUBLIC_URL.endsWith('/')) PUBLIC_URL = PUBLIC_URL.slice(0, -1);
 
 const app = express();
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
+// ===== Telegram Bot =====
+const bot = new Telegraf(BOT_TOKEN);
+
+// /start — покажем кнопку открытия Mini App
+bot.start(async (ctx) => {
+  await ctx.reply(
+    'Welcome to FormApp! Tap to open 👇',
+    Markup.inlineKeyboard([Markup.button.webApp('Open Mini App', PUBLIC_URL)])
+  );
+});
+
+// Любой текст — просто эхо
+bot.on('text', async (ctx) => {
+  await ctx.reply(`You said: ${ctx.message.text}`);
+});
+
+// Приём данных из Mini App (sendData)
+bot.on('message', async (ctx) => {
+  const wa = ctx.message && ctx.message.web_app_data;
+  if (!wa) return;
+  try {
+    // данные из Mini App приходят строкой
+    const parsed = JSON.parse(wa.data);
+    if (parsed && parsed.type === 'publish' && typeof parsed.text === 'string') {
+      // публикуем в чат сообщение
+      await ctx.reply(`Mini App says: ${parsed.text}`);
+    } else {
+      await ctx.reply(`Mini App data: ${wa.data}`);
+    }
+  } catch {
+    await ctx.reply(`Mini App data: ${wa.data}`);
+  }
+});
+
+// ===== Webhook =====
+const WEBHOOK_PATH = `/tg/${BOT_TOKEN}`;
+const WEBHOOK_URL = `${PUBLIC_URL}${WEBHOOK_PATH}`;
+
+// Передаём апдейты в Telegraf через webhookCallback
+app.use(WEBHOOK_PATH, bot.webhookCallback(WEBHOOK_PATH));
+
+// ===== Статика (мини-приложение) =====
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Главная — отдаём public/index.html
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// --- validate initData ---
-function validateInitData(initData, botToken) {
-  const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  if (!hash) return false;
+// Healthcheck для Render (по желанию)
+app.get('/healthz', (_req, res) => res.status(200).send('OK'));
 
-  const pairs = [];
-  params.forEach((v, k) => {
-    if (k !== 'hash' && k !== 'signature') pairs.push(`${k}=${v}`);
-  });
-  pairs.sort();
-  const dataCheckString = pairs.join('\n');
-
-  const secret = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
-  const hmac = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex');
-  return hmac === hash;
-}
-
-app.post('/auth/tma', (req, res) => {
-  const { initData } = req.body || {};
-  if (!initData) return res.status(400).json({ ok: false, error: 'no initData' });
-  if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: 'no BOT_TOKEN' });
-
-  const ok = validateInitData(initData, BOT_TOKEN);
-  if (!ok) return res.status(403).json({ ok: false, error: 'invalid initData' });
-
-  const params = new URLSearchParams(initData);
-  const userJson = params.get('user');
-  const user = userJson ? JSON.parse(userJson) : null;
-
-  return res.json({
-    ok: true,
-    user: {
-      id: user?.id,
-      name: `${user?.first_name || ''} ${user?.last_name || ''}`.trim(),
-      username: user?.username,
-    },
-  });
-});
-
-// publish message
-app.post('/api/publish', async (req, res) => {
-  try {
-    const { query_id, text } = req.body || {};
-    if (!query_id || !text) return res.status(400).json({ ok: false, error: 'no query_id or text' });
-    if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: 'no BOT_TOKEN' });
-
-    await bot.telegram.answerWebAppQuery(query_id, {
-      type: 'article',
-      id: String(Date.now()),
-      title: 'Message from Mini App',
-      input_message_content: { message_text: text },
-    });
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-let bot;
-if (BOT_TOKEN) {
-  bot = new Telegraf(BOT_TOKEN);
-
-  bot.start(async (ctx) => {
-    const url = PUBLIC_URL || 'https://example.com';
-    const kb = Markup.inlineKeyboard([
-      [Markup.button.webApp('Open Mini App (inline)', `${url}?mode=inline`)]
-    ]);
-    await ctx.reply('Tap the button to open the Mini App:', kb);
-  });
-
-  bot.on('message', async (ctx) => {
-    const wa = ctx.message?.web_app_data;
-    if (wa?.data) await ctx.reply(`Mini App sent: ${wa.data}`);
-  });
-
-  bot.launch().then(() => console.log('Bot started'));
-} else {
-  console.warn('BOT_TOKEN is not set — bot not started.');
-}
-
+// ===== Запуск HTTP + установка webhook =====
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('HTTP server running on', PORT));
+app.listen(PORT, async () => {
+  console.log(`🌐 HTTP server on ${PORT}`);
+
+  try {
+    // На всякий случай очистим прежний вебхук и зависшие апдейты
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+  } catch (e) {
+    console.warn('deleteWebhook warn:', e.message);
+  }
+
+  await bot.telegram.setWebhook(WEBHOOK_URL, { drop_pending_updates: true });
+  console.log(`✅ Webhook set: ${WEBHOOK_URL}`);
+});
+
+// Аккуратное завершение
+process.once('SIGINT', () => process.exit(0));
+process.once('SIGTERM', () => process.exit(0));
