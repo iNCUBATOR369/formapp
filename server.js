@@ -1,0 +1,106 @@
+// server.js
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const path = require('path');
+const crypto = require('crypto');
+const { Telegraf, Markup } = require('telegraf');
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PUBLIC_URL = process.env.PUBLIC_URL || '';
+
+const app = express();
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// --- validate initData ---
+function validateInitData(initData, botToken) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  if (!hash) return false;
+
+  const pairs = [];
+  params.forEach((v, k) => {
+    if (k !== 'hash' && k !== 'signature') pairs.push(`${k}=${v}`);
+  });
+  pairs.sort();
+  const dataCheckString = pairs.join('\n');
+
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+  const hmac = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex');
+  return hmac === hash;
+}
+
+app.post('/auth/tma', (req, res) => {
+  const { initData } = req.body || {};
+  if (!initData) return res.status(400).json({ ok: false, error: 'no initData' });
+  if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: 'no BOT_TOKEN' });
+
+  const ok = validateInitData(initData, BOT_TOKEN);
+  if (!ok) return res.status(403).json({ ok: false, error: 'invalid initData' });
+
+  const params = new URLSearchParams(initData);
+  const userJson = params.get('user');
+  const user = userJson ? JSON.parse(userJson) : null;
+
+  return res.json({
+    ok: true,
+    user: {
+      id: user?.id,
+      name: `${user?.first_name || ''} ${user?.last_name || ''}`.trim(),
+      username: user?.username,
+    },
+  });
+});
+
+// publish message
+app.post('/api/publish', async (req, res) => {
+  try {
+    const { query_id, text } = req.body || {};
+    if (!query_id || !text) return res.status(400).json({ ok: false, error: 'no query_id or text' });
+    if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: 'no BOT_TOKEN' });
+
+    await bot.telegram.answerWebAppQuery(query_id, {
+      type: 'article',
+      id: String(Date.now()),
+      title: 'Message from Mini App',
+      input_message_content: { message_text: text },
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+let bot;
+if (BOT_TOKEN) {
+  bot = new Telegraf(BOT_TOKEN);
+
+  bot.start(async (ctx) => {
+    const url = PUBLIC_URL || 'https://example.com';
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.webApp('Open Mini App (inline)', `${url}?mode=inline`)]
+    ]);
+    await ctx.reply('Tap the button to open the Mini App:', kb);
+  });
+
+  bot.on('message', async (ctx) => {
+    const wa = ctx.message?.web_app_data;
+    if (wa?.data) await ctx.reply(`Mini App sent: ${wa.data}`);
+  });
+
+  bot.launch().then(() => console.log('Bot started'));
+} else {
+  console.warn('BOT_TOKEN is not set — bot not started.');
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log('HTTP server running on', PORT));
