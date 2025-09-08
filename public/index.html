@@ -1,141 +1,122 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    content="width=device-width, initial-scale=1, maximum-scale=1"
   />
-  <title>FormApp – Mini App</title>
+  <title>FormApp</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
       --bg: #ffffff;
       --fg: #111111;
-      --card: #f5f5f5;
-      --muted: #6b7280;
+      --muted: #6a6a6a;
+      --primary: #0a84ff;
+      --primary-contrast: #ffffff;
+      --card: #f5f7fb;
       --radius: 16px;
     }
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: var(--bg);
-      color: var(--fg);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif;
+    [data-theme="dark"] {
+      --bg: #0f1115;
+      --fg: #eaeef7;
+      --muted: #9aa3b2;
+      --primary: #3b82f6;
+      --primary-contrast: #ffffff;
+      --card: #171923;
     }
-    .wrap {
-      max-width: 840px;
-      margin: 0 auto;
-      padding: 20px 16px 48px;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg); color: var(--fg);
+    }
+    .container {
+      max-width: 680px; margin: 0 auto; padding: 20px 16px 36px;
     }
     .card {
       background: var(--card);
       border-radius: var(--radius);
       padding: 20px;
-      box-shadow: 0 1px 6px rgba(0,0,0,.06);
+      box-shadow: 0 6px 16px rgba(0,0,0,.08);
     }
     h1 {
-      margin: 0 0 8px;
-      font-size: 22px;
-      line-height: 1.2;
+      font-size: 22px; margin: 0 0 14px 0; line-height: 1.25;
     }
-    p {
-      margin: 0 0 16px;
-      color: var(--muted);
-    }
-    input[type="text"] {
-      width: 100%;
-      font-size: 16px;
-      padding: 12px 14px;
+    .muted { color: var(--muted); font-size: 14px; }
+    .row { display: flex; gap: 12px; margin-top: 16px; }
+    input {
+      flex: 1; padding: 14px 16px;
+      border: 1px solid rgba(0,0,0,.08);
       border-radius: 12px;
-      border: 1px solid #e5e7eb;
+      background: #fff; color: #000;
       outline: none;
-      background: #fff;
-      color: #111;
-      box-sizing: border-box;
     }
-    .row { display: flex; gap: 12px; margin-top: 14px; }
-    button {
-      border: 0;
-      border-radius: 12px;
-      padding: 12px 16px;
-      font-size: 16px;
-      cursor: pointer;
+    .btn {
+      padding: 14px 16px;
+      border: none; border-radius: 12px;
+      background: var(--primary); color: var(--primary-contrast);
+      font-weight: 600; cursor: pointer;
+      transition: transform .06s ease;
+      white-space: nowrap;
     }
-    .primary { background: #111827; color: #fff; }
-    .ghost { background: transparent; border: 1px solid #e5e7eb; }
-    .hint { font-size: 13px; color: var(--muted); margin-top: 10px; }
+    .btn:active { transform: translateY(1px); }
+    .footer { margin-top: 18px; font-size: 13px; color: var(--muted); }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div id="app" class="container">
     <div class="card">
-      <h1>Welcome to <b>FormApp</b> 👋</h1>
-      <p>Type any text below and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
-
-      <input id="text" type="text" placeholder="This message came from the Mini App!" value="This message came from the Mini App!" />
+      <h1>Welcome to FormApp 👋</h1>
+      <div class="muted">Type any text below and press <b>Send to bot</b>. The bot will publish it in the chat.</div>
 
       <div class="row">
-        <button id="send" class="primary">Send to bot</button>
-        <button id="theme" class="ghost">Toggle theme</button>
+        <input id="text" type="text" value="This message came from the Mini App!" />
       </div>
-      <div class="hint" id="userBox">Loading user…</div>
+
+      <div class="row">
+        <button id="send" class="btn">Send to bot</button>
+        <button id="theme" class="btn" style="background:#e2e8f0; color:#111;">Toggle theme</button>
+      </div>
+
+      <div class="footer">
+        <span id="user"></span>
+      </div>
     </div>
   </div>
 
   <script>
-    const tg = window.Telegram?.WebApp;
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    // Учитываем тему Telegram
+    if (tg.colorScheme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
 
-    // Подготовим тему
-    function applyTheme() {
-      const isDark = tg?.colorScheme === 'dark';
-      document.documentElement.style.setProperty('--bg', isDark ? '#0f1216' : '#ffffff');
-      document.documentElement.style.setProperty('--fg', isDark ? '#e5e7eb' : '#111111');
-      document.documentElement.style.setProperty('--card', isDark ? '#151a21' : '#f5f5f5');
-      document.documentElement.style.setProperty('--muted', isDark ? '#98a2b3' : '#6b7280');
-      tg?.setHeaderColor(isDark ? '#0f1216' : '#ffffff');
-      tg?.setBackgroundColor(isDark ? '#0f1216' : '#ffffff');
-    }
+    const input = document.getElementById('text');
+    const sendBtn = document.getElementById('send');
+    const themeBtn = document.getElementById('theme');
+    const userSpan = document.getElementById('user');
 
-    if (tg) {
-      tg.expand(); // растягиваем на всю высоту
-      applyTheme();
-      tg.onEvent('themeChanged', applyTheme);
-
-      // Покажем имя пользователя
+    // Пишем кто пользователь
+    try {
       const u = tg.initDataUnsafe?.user;
-      const userBox = document.getElementById('userBox');
-      if (u) {
-        userBox.textContent = `User: ${u.first_name || ''} ${u.last_name || ''} (@${u.username || '-'})`;
-      } else {
-        userBox.textContent = 'User is not available (open inside Telegram).';
-      }
-    }
+      if (u) userSpan.textContent = `User: ${u.username ? '@'+u.username : u.first_name} (id: ${u.id})`;
+    } catch(_) {}
 
-    // Отправка данных боту
-    document.getElementById('send').addEventListener('click', () => {
-      const text = (document.getElementById('text').value || '').trim();
-      if (!text) {
-        tg?.showAlert?.('Please type something first 🙂');
-        return;
-      }
-      // Передаём данные строкой (бот опубликует в чат)
-      const payload = JSON.stringify({ type: 'publish', text });
-      tg?.sendData ? tg.sendData(payload) : alert('sendData:\n' + payload);
-      tg?.showPopup?.({ title: 'Sent', message: 'Message sent to the bot 👍', buttons: [{ type: 'ok' }] });
-    });
+    // Отправка данных боту (придёт как message.web_app_data.data)
+    sendBtn.onclick = () => {
+      const text = input.value.trim();
+      if (!text) return tg.showAlert('Please, type something first.');
+      tg.sendData(text);
+      tg.showPopup({ title: 'Sent', message: 'Data was sent to the bot. Check the chat.', buttons: [{type:'ok'}] });
+    };
 
-    // Переключение темы
-    document.getElementById('theme').addEventListener('click', () => {
-      const dark = tg?.colorScheme === 'dark';
-      tg?.setSettingsButtonVisible?.(true);
-      tg?.showConfirm?.(`Switch to ${dark ? 'light' : 'dark'} mode?`, (ok) => {
-        if (!ok) return;
-        // Локально просто применим альтернативную палитру (демо)
-        tg.colorScheme = dark ? 'light' : 'dark';
-        applyTheme();
-      });
-    });
+    // Переключение темы внутри мини-приложения
+    themeBtn.onclick = () => {
+      const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      if (cur === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.removeAttribute('data-theme');
+    };
   </script>
 </body>
 </html>
