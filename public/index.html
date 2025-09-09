@@ -71,28 +71,23 @@
     function applyThemeFromTelegram() {
       const scheme = tg.colorScheme === "dark" ? "dark" : "light";
       document.documentElement.dataset.theme = scheme;
-      localStorage.setItem("formapp_theme", scheme); // запомним, чтобы при открытии с другой точки входа было так же
+      localStorage.setItem("formapp_theme", scheme);
     }
-    // если пользователь уже переключал вручную — уважаем его выбор;
-    // иначе подстраиваемся под Telegram
     const saved = localStorage.getItem("formapp_theme");
     if (saved === "dark" || saved === "light") {
       document.documentElement.dataset.theme = saved;
     } else {
       applyThemeFromTelegram();
     }
-
     tg.onEvent("themeChanged", () => {
-      // если пользователь НЕ фиксировал вручную — меняем вместе с Telegram
       const fixed = localStorage.getItem("formapp_theme_fixed") === "1";
       if (!fixed) applyThemeFromTelegram();
     });
-
     document.getElementById("theme").addEventListener("click", () => {
       const now = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
       document.documentElement.dataset.theme = now;
       localStorage.setItem("formapp_theme", now);
-      localStorage.setItem("formapp_theme_fixed", "1"); // зафиксировали ручной выбор
+      localStorage.setItem("formapp_theme_fixed", "1");
     });
 
     // ---------- UI ----------
@@ -105,10 +100,13 @@
     const input = document.getElementById("text");
     const sendBtn = document.getElementById("send");
 
-    // Надёжная отправка в бот:
-    // 1) tg.sendData(JSON.stringify(...))
-    // 2) короткая задержка (350–500 мс), чтобы Telegram гарантированно получил payload
-    // 3) пытаемся закрыть mini-app; если нельзя — показываем alert "Sent"
+    // Определяем точку входа:
+    // если есть start_param — это Open FormApp (deep link). Иначе — Web App кнопка.
+    const isStartApp = Boolean(tg.initDataUnsafe?.start_param);
+
+    // Для Web App даём чуть больше времени телеге принять sendData.
+    const SEND_DELAY = isStartApp ? 450 : 950;
+
     sendBtn.addEventListener("click", () => {
       const text = (input.value || "").trim() || "This message came from the Mini App!";
       sendBtn.disabled = true;
@@ -121,20 +119,19 @@
         return;
       }
 
-      // Универсально для обоих входов: небольшая задержка — затем закрываем.
       setTimeout(() => {
         let closed = false;
         try {
-          tg.close(); // в большинстве клиентов и сценариев сработает
+          tg.close();
           closed = true;
         } catch (_) {}
 
         if (!closed) {
-          // запасной вариант для клиентов, где close() недоступен
+          // запасной вариант, если закрыть из клиента нельзя
           tg.showAlert("Sent!");
           sendBtn.disabled = false;
         }
-      }, 450); // баланс: надёжно уходит payload и окно закрывается достаточно быстро
+      }, SEND_DELAY);
     });
   </script>
 </body>
