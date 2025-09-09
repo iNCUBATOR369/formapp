@@ -1,115 +1,126 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>FormApp</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg: #ffffff;
-      --fg: #111111;
-      --muted: #6a6a6a;
-      --primary: #0a84ff;
-      --primary-contrast: #ffffff;
-      --card: #f5f7fb;
-      --radius: 16px;
+      --bg:#ffffff; --fg:#111111; --muted:#6a6a6a; --primary:#0a84ff;
+      --primary-contrast:#ffffff; --card:#f5f7fb; --radius:16px;
     }
     [data-theme="dark"] {
-      --bg: #0e0e10;
-      --fg: #e7e8ea;
-      --muted: #9aa0a6;
-      --primary: #4ba3ff;
-      --primary-contrast: #0b1220;
-      --card: #16181c;
+      --bg:#0f1113; --fg:#eeeeee; --muted:#9aa4af; --primary:#39a0ff;
+      --primary-contrast:#00111a; --card:#15181b;
     }
     html,body{height:100%}
     body{
-      margin:0; font:16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-      color:var(--fg); background:var(--bg);
-      display:flex; align-items:flex-start; justify-content:center;
+      margin:0; font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;
+      background:var(--bg); color:var(--fg); display:grid; place-items:center;
     }
-    .wrap{width:100%; max-width:680px; padding:24px}
     .card{
-      background:var(--card); border-radius:var(--radius);
-      padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.06);
+      width:min(720px,92vw); background:var(--card); padding:24px; border-radius:var(--radius);
+      box-shadow:0 8px 28px rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.06);
     }
     h1{margin:0 0 12px}
-    p{margin:0 0 16px; color:var(--muted)}
+    .row{display:flex; gap:10px; margin-top:12px}
     input{
-      width:100%; padding:12px 14px; border-radius:12px; border:none; outline:1px solid rgba(0,0,0,.08);
-      background:#fff; color:#111;
+      flex:1 1 auto; padding:12px 14px; border-radius:12px; border:0; outline:none;
+      background:#fff; color:#111; box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);
     }
-    [data-theme="dark"] input{ background:#0f1115; color:#e7e8ea; outline-color:rgba(255,255,255,.08); }
-    .row{display:flex; gap:12px; margin-top:12px; flex-wrap:wrap}
-    button{
-      cursor:pointer; border:none; border-radius:12px; padding:12px 16px;
+    .btn{
+      appearance:none; border:0; border-radius:12px; padding:12px 16px; cursor:pointer;
       background:var(--primary); color:var(--primary-contrast); font-weight:600;
+      box-shadow:0 6px 18px rgba(10,132,255,.25);
     }
-    .ghost{ background:transparent; outline:1px solid rgba(0,0,0,.12); color:var(--fg) }
-    [data-theme="dark"] .ghost{ outline-color:rgba(255,255,255,.1) }
-    .hint{font-size:13px; color:var(--muted); margin-top:10px}
+    .ghost{background:transparent; color:var(--fg); box-shadow:none}
+    small{color:var(--muted)}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Welcome to FormApp 👋</h1>
-      <p>Type any text and press <b>Send to bot</b>. Close the Web App — бот получит данные и ответит в чат.</p>
+  <div class="card">
+    <h1>Welcome to FormApp 👋</h1>
+    <p>Type any text below and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
 
-      <input id="text" placeholder="This message came from the Mini App!" />
-
-      <div class="row">
-        <button id="send">Send to bot</button>
-        <button id="theme" class="ghost">Toggle theme</button>
-      </div>
-
-      <div class="hint" id="user"></div>
-      <div class="hint">Tip: данные доставляются боту в <b>личный чат</b> только после закрытия этого окна.</div>
+    <div class="row">
+      <input id="msg" placeholder="This message came from the Mini App!" />
+      <button id="send" class="btn">Send to bot</button>
     </div>
+
+    <div class="row">
+      <button id="toggle" class="btn ghost">Toggle theme</button>
+      <button id="close"  class="btn ghost">Close</button>
+    </div>
+
+    <small id="meta"></small>
   </div>
 
   <script>
-    const tg = window.Telegram?.WebApp;
-    // Безопасный init
-    try { tg?.ready(); } catch(e) {}
+    const tg = window.Telegram.WebApp;
+    // Приводим тему к текущей теме Телеграма
+    document.documentElement.dataset.theme = tg.colorScheme === 'dark' ? 'dark' : 'light';
+    tg.onEvent('themeChanged', () => {
+      document.documentElement.dataset.theme = tg.colorScheme === 'dark' ? 'dark' : 'light';
+    });
 
-    // Тема
-    function applyTheme(){
-      const root = document.documentElement;
-      root.setAttribute("data-theme", tg?.colorScheme === "dark" ? "dark" : "light");
+    // Показываем бэкенду, кто мы и из какого контекста открылись
+    const meta = document.getElementById('meta');
+    const unsafe = tg.initDataUnsafe || {};
+    meta.textContent =
+      `User: ${unsafe?.user?.username || unsafe?.user?.id || 'n/a'} ` +
+      `| Chat: ${unsafe?.chat?.id || 'n/a'} ` +
+      `| Via: ${unsafe?.start_param ? 'inline-button' : 'menu'}`;
+
+    // Надёжно определяем получателя: userId или chatId
+    function resolveRecipient() {
+      // 1) чаще всего есть user.id
+      const userId = unsafe?.user?.id;
+      // 2) иногда есть chat.id
+      const chatId = unsafe?.chat?.id;
+      // 3) иногда Telegram отдаёт из-под web_app_query только queryId (для inline кнопки)
+      const queryId = unsafe?.query_id;
+
+      return { userId, chatId, queryId };
     }
-    applyTheme();
-    tg?.onEvent?.("themeChanged", applyTheme);
 
-    // Расширим окно
-    try { tg?.expand?.(); } catch(e){}
+    async function sendToBot() {
+      const text = (document.getElementById('msg').value || '').trim() || 'This message came from the Mini App!';
+      const { userId, chatId, queryId } = resolveRecipient();
 
-    // Показать юзера (для наглядности)
-    const u = tg?.initDataUnsafe?.user;
-    document.getElementById("user").textContent = u ? `User: ${u.username ? '@'+u.username : u.first_name} (id: ${u.id})` : 'User unknown';
-
-    // КНОПКА 1: отправка данных боту (для Menu Button/Keyboard)
-    document.getElementById("send").onclick = () => {
-      const text = document.getElementById("text").value || "This message came from the Mini App!";
-      const payload = { type:"form", text, ts: Date.now() };
-
-      // ВАЖНО: для Menu Button/Keyboard — используем sendData
       try {
-        tg.sendData(JSON.stringify(payload));
-        // Для UX покажем нотификацию
-        tg.showPopup({ title:"Sent", message:"Close this window to see the bot reply in chat." });
-      } catch(e) {
-        alert("sendData failed: " + e.message);
-      }
-    };
+        const res = await fetch('/tg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            // Передаём всё, что может пригодиться серверу для выбора стратегии
+            userId,
+            chatId,
+            queryId,
+            initData: tg.initData || '', // строка для возможной валидации/диагностики
+          })
+        });
 
-    // КНОПКА 2: переключение темы
-    document.getElementById("theme").onclick = () => {
-      const root = document.documentElement;
-      const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
-      root.setAttribute("data-theme", next);
-    };
+        const ok = res.ok;
+        const data = await res.json().catch(()=>({}));
+
+        if (ok) {
+          // Нативный попап Telegram
+          tg.showPopup({ title: 'Sent', message: 'Close this window to see the bot reply in chat.', buttons: [{id:'ok',type:'close',text:'Close'}] });
+          // На всякий случай закрываем WebApp сами через 600мс (бывает, что юзер не нажмёт)
+          setTimeout(()=>tg.close(), 600);
+        } else {
+          tg.showAlert(data?.error || 'Failed to send');
+        }
+      } catch (e) {
+        tg.showAlert('Network error: ' + (e?.message || e));
+      }
+    }
+
+    document.getElementById('send').addEventListener('click', sendToBot);
+    document.getElementById('toggle').addEventListener('click', () => tg.setHeaderColor(tg.colorScheme === 'dark' ? '#ffffff' : '#0f1113'));
+    document.getElementById('close').addEventListener('click', () => tg.close());
   </script>
 </body>
 </html>
