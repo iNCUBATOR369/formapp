@@ -1,151 +1,26 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
-  <meta http-equiv="Pragma" content="no-cache"/>
-  <meta http-equiv="Expires" content="0"/>
+  <meta charset="utf-8" />
   <title>FormApp</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    :root {
-      --bg: #ffffff;
-      --fg: #111111;
-      --muted: #6a6a6a;
-      --primary: #0a84ff;
-      --primary-contrast: #ffffff;
-      --card: #f5f7fb;
-      --radius: 16px;
-      --input-bg: #f1f3f7;
-    }
-    :root[data-theme="dark"] {
-      --bg: #0f0f0f;
-      --fg: #e9e9ea;
-      --muted: #a0a0a0;
-      --primary: #7ca8ff;
-      --card: #16181c;
-      --input-bg: #1e2229;
-    }
-    html, body { height:100%; margin:0; background:var(--bg); color:var(--fg);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 32px; }
-    .card { background: var(--card); border-radius: var(--radius); padding: 20px;
-      box-shadow: 0 8px 28px rgba(0,0,0,.08); }
-    h1 { margin:0 0 12px; }
-    p  { margin:0 0 16px; color:var(--muted); }
-    .row { display:flex; gap:8px; }
-    input { flex:1; height:44px; padding:0 12px; border:none; border-radius:12px; outline:none;
-      color:var(--fg); background:var(--input-bg); }
-    button { height:44px; padding:0 14px; border-radius:12px; border:none;
-      background:var(--primary); color:var(--primary-contrast); font-weight:600; cursor:pointer; }
-    button.secondary { background:transparent; color:var(--fg); border:1px solid #0003; }
-    button:disabled { opacity:.6; cursor:default; }
-    .meta { margin-top:6px; color:var(--muted); font-size:12px; }
-    .topbar { display:flex; gap:8px; justify-content:flex-end; margin-bottom:12px; }
-  </style>
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <div class="topbar">
-        <button id="theme" class="secondary" type="button">Toggle theme</button>
-      </div>
+  <main class="card">
+    <h1>Welcome to FormApp 👋</h1>
+    <p class="muted">Type any text and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
 
-      <h1>Welcome to FormApp 👋</h1>
-      <p>Type any text and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
-
-      <div class="row" style="margin-top:12px">
-        <input id="text" type="text" placeholder="This message came from the Mini App!" />
-        <button id="send" type="button">Send to bot</button>
-      </div>
-
-      <div class="meta">User: <span id="user">unknown</span></div>
+    <div class="row">
+      <input id="msg" placeholder="This message came from the Mini App!" />
+      <button id="send">Send to bot</button>
+      <button id="toggle" class="ghost">Toggle theme</button>
     </div>
-  </div>
 
-  <script>
-    const tg = window.Telegram.WebApp;
+    <p class="meta">User: <span id="who">—</span></p>
+  </main>
 
-    // -------- ТЕМА --------
-    function applyThemeFromTelegram() {
-      const scheme = tg.colorScheme === "dark" ? "dark" : "light";
-      document.documentElement.dataset.theme = scheme;
-      localStorage.setItem("formapp_theme", scheme);
-    }
-    const saved = localStorage.getItem("formapp_theme");
-    if (saved === "dark" || saved === "light") {
-      document.documentElement.dataset.theme = saved;
-    } else {
-      applyThemeFromTelegram();
-    }
-    tg.onEvent("themeChanged", () => {
-      const fixed = localStorage.getItem("formapp_theme_fixed") === "1";
-      if (!fixed) applyThemeFromTelegram();
-    });
-    document.getElementById("theme").addEventListener("click", () => {
-      const now = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-      document.documentElement.dataset.theme = now;
-      localStorage.setItem("formapp_theme", now);
-      localStorage.setItem("formapp_theme_fixed", "1");
-    });
-
-    // -------- UI / отправка --------
-    tg.expand();
-
-    const user = tg.initDataUnsafe?.user;
-    const userId = user?.id;
-    document.getElementById("user").textContent =
-      user ? (user.username ? `@${user.username}` : `id:${user.id}`) : "unknown";
-
-    const input   = document.getElementById("text");
-    const sendBtn = document.getElementById("send");
-
-    // если есть start_param — это Open FormApp (deep link); иначе — Web App кнопка
-    const isStartApp = Boolean(tg.initDataUnsafe?.start_param);
-
-    sendBtn.addEventListener("click", async () => {
-      const text = (input.value || "").trim() || "This message came from the Mini App!";
-      sendBtn.disabled = true;
-
-      if (isStartApp) {
-        // --- Open FormApp: надёжно через sendData ---
-        try {
-          tg.sendData(JSON.stringify({ type: "form", text }));
-        } catch (e) {
-          tg.showAlert("Error: " + (e?.message || e));
-          sendBtn.disabled = false;
-          return;
-        }
-        setTimeout(() => {
-          try { tg.close(); } catch (_) { tg.showAlert("Sent!"); }
-          sendBtn.disabled = false;
-        }, 450);
-      } else {
-        // --- Web App: шлём напрямую на сервер ---
-        if (!userId) {
-          tg.showAlert("Error: user id not available");
-          sendBtn.disabled = false;
-          return;
-        }
-        try {
-          const r = await fetch("/api/webapp", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, text })
-          });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok || !j.ok) {
-            throw new Error(j?.error || "server error");
-          }
-          try { tg.close(); } catch (_) { tg.showAlert("Sent!"); }
-        } catch (e) {
-          tg.showAlert("Error: " + (e?.message || e));
-        } finally {
-          sendBtn.disabled = false;
-        }
-      }
-    });
-  </script>
+  <script src="/app.js"></script>
 </body>
 </html>
