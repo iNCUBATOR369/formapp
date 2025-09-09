@@ -1,119 +1,143 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FormApp</title>
+
+  <!-- Telegram Mini App SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
   <style>
-    :root { --bg:#fff; --fg:#111; --muted:#6a6a6a; --primary:#0a84ff; --card:#f5f7fb; --radius:16px }
-    [data-theme="dark"] { --bg:#0f1113; --fg:#eee; --muted:#9aa4af; --primary:#39a0ff; --card:#15181b }
-    html,body{height:100%}
-    body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;display:grid;place-items:center}
-    .card{width:min(720px,92vw);background:var(--card);padding:24px;border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.08),0 2px 8px rgba(0,0,0,.06)}
-    .row{display:flex;gap:10px;margin-top:12px}
-    input{flex:1;padding:12px 14px;border-radius:12px;border:0;outline:none;background:#fff;color:#111;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
-    [data-theme="dark"] input{background:#111;color:#eee;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
-    .btn{appearance:none;border:0;border-radius:12px;padding:12px 16px;cursor:pointer;background:var(--primary);color:#fff;font-weight:600;box-shadow:0 6px 18px rgba(10,132,255,.25)}
-    .ghost{background:transparent;color:var(--fg);box-shadow:none}
-    small{color:var(--muted)}
+    :root{
+      --bg:#ffffff;
+      --fg:#111111;
+      --muted:#6a6a6a;
+      --primary:#0a84ff;
+      --primary-contrast:#ffffff;
+      --card:#f5f7fb;
+      --radius:16px;
+    }
+    [data-theme="dark"]{
+      --bg:#0e1116;
+      --fg:#e6e6e6;
+      --muted:#9aa4ad;
+      --primary:#61a8ff;
+      --primary-contrast:#0e1116;
+      --card:#151a22;
+    }
+    html,body{
+      padding:0;margin:0;
+      background:var(--bg);
+      color:var(--fg);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+    }
+    .wrap{
+      max-width:640px;
+      margin:0 auto;
+      padding:20px;
+    }
+    .card{
+      background:var(--card);
+      border-radius:var(--radius);
+      padding:16px;
+    }
+    input,button{
+      font-size:16px;
+      border-radius:12px;
+      border:none;
+      outline:none;
+    }
+    input{
+      width:100%;
+      padding:12px 14px;
+      background:#fff0;
+      color:var(--fg);
+      border:1px solid rgba(0,0,0,.08);
+      background:rgba(0,0,0,.03);
+    }
+    button{
+      padding:12px 16px;
+      background:var(--primary);
+      color:var(--primary-contrast);
+      cursor:pointer;
+    }
+    .row{display:flex; gap:12px; align-items:center;}
+    .row > * {flex:1;}
+    .muted{color:var(--muted); font-size:14px;}
   </style>
 </head>
 <body>
-  <div class="card">
+  <div class="wrap">
     <h2>Welcome to FormApp 👋</h2>
-    <p>Type any text below and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
+    <p class="muted">Type any text below and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
 
-    <div class="row">
-      <input id="msg" placeholder="This message came from the Mini App!" />
-      <button id="send" class="btn">Send to bot</button>
+    <div class="card" style="margin-top:12px;">
+      <input id="text" type="text" placeholder="This message came from the Mini App!" />
+      <div class="row" style="margin-top:12px;">
+        <button id="send">Send to bot</button>
+        <button id="theme">Toggle theme</button>
+      </div>
+      <p class="muted" id="who" style="margin-top:12px;"></p>
     </div>
-
-    <div class="row">
-      <button id="toggle" class="btn ghost">Toggle theme</button>
-      <button id="close"  class="btn ghost">Close</button>
-    </div>
-
-    <small id="meta"></small>
   </div>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    const unsafe = tg.initDataUnsafe || {};
+    const TG = window.Telegram.WebApp;
 
-    // --- тема
-    function applyTheme(theme){
-      document.documentElement.dataset.theme = theme;
-      if (theme === 'dark') {
-        tg.setHeaderColor('#0f1113');
-        tg.setBackgroundColor('#0f1113');
-      } else {
-        tg.setHeaderColor('#ffffff');
-        tg.setBackgroundColor('#ffffff');
+    // применяем тему телеграма
+    const setTheme = () => {
+      const dark = TG.colorScheme === 'dark' || TG.themeParams.bg_color === '#0e1116';
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    };
+    setTheme();
+    TG.onEvent('themeChanged', setTheme);
+
+    // показываем user
+    const user = TG.initDataUnsafe?.user;
+    document.getElementById('who').textContent =
+      user ? `User: ${user.first_name}${user.username ? ' (@'+user.username+')' : ''}` : '';
+
+    // отправка сообщения боту
+    async function sendMessage() {
+      const text = (document.getElementById('text').value || '').trim() || 'This message came from the Mini App!';
+      try {
+        const res = await fetch('/send', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ text, initData: TG.initData })
+        });
+
+        if (!res.ok) throw new Error('Server responded with ' + res.status);
+
+        // показываем системный попап Telegram
+        let closed = false;
+        const onPopupClosed = () => { if (!closed){ closed = true; TG.offEvent('popupClosed', onPopupClosed); TG.close(); } };
+        TG.onEvent('popupClosed', onPopupClosed);
+
+        TG.showPopup(
+          { title: 'Telegram', message: 'Sent!', buttons: [{ id: 'close', type: 'default', text: 'Close' }] },
+          () => { onPopupClosed(); } // некоторые клиенты присылают callback сразу
+        );
+
+        // страховка на случай, если конкретный клиент ни callback, ни событие не даст
+        setTimeout(onPopupClosed, 2000);
+
+      } catch (e) {
+        TG.showPopup({ title:'Error', message: String(e), buttons:[{id:'ok', type:'default', text:'OK'}] });
       }
     }
-    applyTheme(tg.colorScheme === 'dark' ? 'dark' : 'light');
-    tg.onEvent('themeChanged', () => applyTheme(tg.colorScheme === 'dark' ? 'dark' : 'light'));
 
-    document.getElementById('toggle').addEventListener('click', () => {
-      const cur = document.documentElement.dataset.theme || 'light';
-      applyTheme(cur === 'dark' ? 'light' : 'dark');
+    document.getElementById('send').addEventListener('click', sendMessage);
+
+    // переключение темы вручную
+    document.getElementById('theme').addEventListener('click', () => {
+      const now = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', now);
     });
 
-    // показать немного контекста
-    document.getElementById('meta').textContent =
-      `User: ${unsafe?.user?.username || unsafe?.user?.id || 'n/a'} | ` +
-      `Chat: ${unsafe?.chat?.id || 'n/a'} | ` +
-      `Query: ${unsafe?.query_id ? 'inline' : 'none'} | ` +
-      `Source: ${unsafe?.start_param ? 'start_param' : 'webApp'}`;
-
-    function safeClose() {
-      try { tg.close(); } catch(e) {}
-      // фолбэк на клиенты, у которых close() глючит
-      setTimeout(() => {
-        try { window.close(); } catch(e) {}
-        try { history.back(); } catch(e) {}
-        // крайний случай — уводим со страницы
-        try { location.href = 'about:blank'; } catch(e) {}
-      }, 120);
-    }
-
-    async function sendViaServer(payload) {
-      const res = await fetch('/tg', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      return res.json().catch(()=> ({}));
-    }
-
-    async function onSend() {
-      const text = (document.getElementById('msg').value || '').trim() || 'This message came from the Mini App!';
-
-      // режим 2: инлайн-кнопка (есть query_id) → answerWebAppQuery
-      if (unsafe?.query_id) {
-        await sendViaServer({ text, queryId: unsafe.query_id, initData: tg.initData || '' });
-        tg.showAlert('Sent!');
-        return safeClose();
-      }
-
-      // режим 3: attach-панель («Open FormApp» справа) → sendData
-      // в этом режиме chat в initData обычно отсутствует
-      if (!unsafe?.chat) {
-        tg.sendData(JSON.stringify({ type:'form', text }));
-        tg.showAlert('Sent!');
-        return safeClose();
-      }
-
-      // режим 1: меню бота → обычный sendMessage
-      const recipient = unsafe.chat?.id || unsafe.user?.id;
-      await sendViaServer({ text, chatId: recipient, initData: tg.initData || '' });
-      tg.showAlert('Sent!');
-      return safeClose();
-    }
-
-    document.getElementById('send').addEventListener('click', onSend);
-    document.getElementById('close').addEventListener('click', safeClose);
+    // важное: сообщаем Telegram, что UI готов
+    TG.ready();
   </script>
 </body>
 </html>
