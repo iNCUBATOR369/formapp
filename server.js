@@ -1,11 +1,11 @@
-// server.js — без axios, только Express + Telegraf. Вебхук и приём web_app_data.
+// server.js — webhook + прием web_app_data. Никаких внешних эндпоинтов.
 
 const path = require("path");
 const express = require("express");
 const { Telegraf } = require("telegraf");
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, ""); // без слеша на конце
+const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
 const PORT = process.env.PORT || 10000;
 
 if (!BOT_TOKEN || !PUBLIC_URL) {
@@ -16,13 +16,11 @@ if (!BOT_TOKEN || !PUBLIC_URL) {
 const app = express();
 const bot = new Telegraf(BOT_TOKEN);
 
-// Связка user.id -> chat.id, чтобы бот знал куда отвечать
+// user.id -> chat.id (чтобы отвечать в правильный чат)
 const userToChat = new Map();
 
-// Команды
 bot.start(async (ctx) => {
-  userToChat.set(ctx.from.id, ctx.chat.id);
-
+  if (ctx.from && ctx.chat) userToChat.set(ctx.from.id, ctx.chat.id);
   await ctx.reply(
     "Welcome to FormApp 👋\nTap the button below to open the mini app.",
     {
@@ -37,7 +35,7 @@ bot.start(async (ctx) => {
 
 bot.command("ping", (ctx) => ctx.reply("pong"));
 
-// Любое сообщение — обновляем связку user->chat
+// Любое входящее сообщение фиксирует связку user->chat
 bot.on("message", async (ctx) => {
   if (ctx.from && ctx.chat) userToChat.set(ctx.from.id, ctx.chat.id);
 
@@ -47,7 +45,7 @@ bot.on("message", async (ctx) => {
     let payload = {};
     try {
       payload = JSON.parse(wa.data);
-    } catch (e) {
+    } catch {
       payload = { text: wa.data };
     }
     const text = (payload.text || "").trim() || "(empty)";
@@ -55,15 +53,14 @@ bot.on("message", async (ctx) => {
   }
 });
 
-// Вебхук
+// Webhook
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(bot.webhookCallback("/tg"));
 
 // Статика мини-аппа
 app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/", (req, res) => {
+app.get("/", (_, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
