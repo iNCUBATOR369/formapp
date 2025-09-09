@@ -1,76 +1,102 @@
-// server.js — webhook + прием web_app_data. Никаких внешних эндпоинтов.
+// server.js
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import { Telegraf, Markup } from "telegraf";
 
-const path = require("path");
-const express = require("express");
-const { Telegraf } = require("telegraf");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+// === ENV ===
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
-const PORT = process.env.PORT || 10000;
-
+const PUBLIC_URL = process.env.PUBLIC_URL?.replace(/\/+$/, ""); // без завершающего /
 if (!BOT_TOKEN || !PUBLIC_URL) {
-  console.error("ENV error: BOT_TOKEN и/или PUBLIC_URL не заданы");
+  console.error("ENV required: BOT_TOKEN, PUBLIC_URL");
   process.exit(1);
 }
 
-const app = express();
+// === TELEGRAM BOT ===
 const bot = new Telegraf(BOT_TOKEN);
 
-// user.id -> chat.id (чтобы отвечать в правильный чат)
-const userToChat = new Map();
-
+// /start: показываем кнопку Web App и подсказку про Open FormApp
 bot.start(async (ctx) => {
-  if (ctx.from && ctx.chat) userToChat.set(ctx.from.id, ctx.chat.id);
+  const webAppUrl = `${PUBLIC_URL}/`; // наш мини-апп
   await ctx.reply(
     "Welcome to FormApp 👋\nTap the button below to open the mini app.",
     {
       reply_markup: {
-        inline_keyboard: [
-          [{ text: "Web App", web_app: { url: `${PUBLIC_URL}/` } }]
-        ]
-      }
+        keyboard: [
+          [{ text: "Web App", web_app: { url: webAppUrl } }],
+        ],
+        resize_keyboard: true,
+        is_persistent: true,
+      },
     }
   );
 });
 
+// /ping
 bot.command("ping", (ctx) => ctx.reply("pong"));
 
-// Любое входящее сообщение фиксирует связку user->chat
-bot.on("message", async (ctx) => {
-  if (ctx.from && ctx.chat) userToChat.set(ctx.from.id, ctx.chat.id);
-
-  // Пришли данные из мини-аппа?
-  const wa = ctx.message && ctx.message.web_app_data;
-  if (wa && wa.data) {
-    let payload = {};
-    try {
-      payload = JSON.parse(wa.data);
-    } catch {
-      payload = { text: wa.data };
+// Получение данных, отправленных из мини-аппа через sendData (Open FormApp)
+bot.on("message", async (ctx, next) => {
+  try {
+    const msg = ctx.message;
+    if (msg?.web_app_data?.data) {
+      // данные, пришедшие через tg.sendData(...)
+      let payload = msg.web_app_data.data;
+      try { payload = JSON.parse(payload); } catch (_) {}
+      const text = (payload && payload.text) ? String(payload.text) : String(payload || "");
+      await ctx.reply(`Got it: ${text}`);
+      return;
     }
-    const text = (payload.text || "").trim() || "(empty)";
-    await ctx.reply(`You wrote: ${text}`);
+  } catch (e) {
+    console.error("web_app_data handler error:", e);
+  }
+  return next();
+});
+
+// === EXPRESS APP ===
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// раздаём мини-апп
+app.use(express.static(path.join(__dirname, "public")));
+
+// health
+app.get("/healthz", (_, res) => res.send("OK"));
+
+// Маршрут для отправки из Web App напрямую на сервер
+// ТРЕБУЕТСЯ только userId и text (валидацию можно добавить позже)
+app.post("/api/webapp", async (req, res) => {
+  try {
+    const { userId, text } = req.body || {};
+    if (!userId || !text) {
+      return res.status(400).json({ ok: false, error: "userId and text are required" });
+    }
+    await bot.telegram.sendMessage(userId, `You wrote: ${text}`);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("/api/webapp error:", e);
+    return res.status(500).json({ ok: false, error: "internal" });
   }
 });
 
-// Webhook
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(bot.webhookCallback("/tg"));
+// вебхук
+const WEBHOOK_PATH = "/tg";
+app.use(WEBHOOK_PATH, bot.webhookCallback(WEBHOOK_PATH));
 
-// Статика мини-аппа
-app.use(express.static(path.join(__dirname, "public")));
-app.get("/", (_, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
+// стартуем
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, async () => {
+  console.log(`HTTP server on ${PORT}`);
+  const target = `${PUBLIC_URL}${WEBHOOK_PATH}`;
   try {
-    await bot.telegram.setWebhook(`${PUBLIC_URL}/tg`);
-    console.log("HTTP server on", PORT);
-    console.log("Webhook set to", `${PUBLIC_URL}/tg`);
+    await bot.telegram.setWebhook(target);
+    console.log("Webhook set to:", target);
     console.log("Primary URL:", PUBLIC_URL);
-  } catch (err) {
-    console.error("Failed to set webhook:", err);
+  } catch (e) {
+    console.error("setWebhook error:", e);
   }
 });
