@@ -1,107 +1,123 @@
 // server.js
-// Полностью готовый сервер: обслуживает мини-апп и принимает события из него.
-// Работают ОДНОВРЕМЕННО два сценария:
-// 1) открытие по inline-кнопке (web_app_query) → answerWebAppQuery()
-// 2) открытие по кнопке Web App в меню бота → обычное sendMessage(chat_id)
+import express from "express";
+import axios from "axios";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const path = require('path');
-const { Telegraf } = require('telegraf');
-
-const BOT_TOKEN  = process.env.BOT_TOKEN;
-const PUBLIC_URL = process.env.PUBLIC_URL; // например: https://formapp-xvb0.onrender.com
-
-if (!BOT_TOKEN) {
-  console.error('BOT_TOKEN is not set!');
-  process.exit(1);
-}
-if (!PUBLIC_URL) {
-  console.error('PUBLIC_URL is not set!');
-  process.exit(1);
-}
-
-const bot = new Telegraf(BOT_TOKEN);
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
-// ===== serve mini app (статические файлы)
-app.use(express.static(path.join(__dirname, 'public')));
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PUBLIC_URL = process.env.PUBLIC_URL; // https://formapp-xvb0.onrender.com
 
-// ===== healthcheck (Render)
-app.get('/healthz', (_, res) => res.send('OK'));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// ===== простой пинг-команд для проверки
-bot.command('start', (ctx) =>
-  ctx.reply('Welcome to FormApp 👋\nTap the button below to open the mini app.',
-    { reply_markup: { inline_keyboard: [[{ text: 'Web App', web_app: { url: PUBLIC_URL } }]] } }
-  )
-);
-bot.command('ping', (ctx) => ctx.reply('pong'));
+app.use(express.static(path.join(__dirname, "public")));
 
-// ===== webhook для mini-app (унифицированный)
-app.post('/tg', async (req, res) => {
+const API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+// --- вспомогалки
+async function tgSendMessage(chat_id, text, extra = {}) {
+  return axios.post(`${API}/sendMessage`, { chat_id, text, ...extra }).then(r => r.data);
+}
+async function tgAnswerWebAppQuery(query_id, title, message) {
+  return axios.post(`${API}/answerWebAppQuery`, {
+    web_app_query_id: query_id,
+    result: {
+      type: "article",
+      id: String(Date.now()),
+      title,
+      input_message_content: { message_text: message }
+    }
+  }).then(r => r.data);
+}
+async function tgSetWebhook() {
   try {
-    const { text, userId, chatId, queryId } = req.body || {};
+    const url = `${PUBLIC_URL}/tg`;
+    await axios.post(`${API}/setWebhook`, { url });
+    console.log("✅ Webhook set to:", url);
+  } catch (e) {
+    console.error("❌ setWebhook error:", e?.response?.data || e.message);
+  }
+}
 
-    if (!text) {
-      return res.status(400).json({ ok: false, error: 'No text' });
-    }
+// --- единственная точка: и вебхук Telegram, и запросы из WebApp
+app.post("/tg", async (req, res) => {
+  const body = req.body;
 
-    // 1) inline-кнопка → есть queryId → шлём answerWebAppQuery
-    if (queryId) {
-      await bot.telegram.answerWebAppQuery(queryId, {
-        type: 'article',
-        id: String(Date.now()),
-        title: 'Message received',
-        input_message_content: {
-          message_text: `Got it: ${text}`
+  try {
+    // 1) если это апдейт Telegram (есть update_id)
+    if (Object.prototype.hasOwnProperty.call(body, "update_id")) {
+      const msg = body.message;
+      const cq  = body.callback_query;
+
+      // web_app_data (режим "скрепка → web app")
+      if (msg?.web_app_data?.data) {
+        // данные приходят строкой — передадим как есть
+        const text = msg.web_app_data.data;
+        await tgSendMessage(msg.chat.id, `Got it: ${text}`);
+        return res.sendStatus(200);
+      }
+
+      if (msg?.text) {
+        const t = msg.text.trim();
+        if (t === "/start") {
+          // дадим кнопку открытия WebApp в меню и attach (reply)
+          await tgSendMessage(msg.chat.id, "Welcome to FormApp 👋\nTap the button below to open the mini app.", {
+            reply_markup: {
+              inline_keyboard: [[{ text: "Web App", web_app: { url: PUBLIC_URL } }]],
+              keyboard: [[{ text: "Open FormApp", web_app: { url: PUBLIC_URL } }]],
+              resize_keyboard: true
+            }
+          });
+          return res.sendStatus(200);
         }
-      });
-      return res.json({ ok: true, mode: 'answerWebAppQuery' });
+        if (t === "/ping") {
+          await tgSendMessage(msg.chat.id, "pong");
+          return res.sendStatus(200);
+        }
+        // любое текстовое
+        await tgSendMessage(msg.chat.id, `You wrote: ${t}`);
+        return res.sendStatus(200);
+      }
+
+      // на всякий случай: колбэки нам сейчас не нужны
+      if (cq) return res.sendStatus(200);
+
+      return res.sendStatus(200);
     }
 
-    // 2) кнопка в меню → нет queryId → шлём обычное сообщение пользователю/в чат
-    const recipient = chatId || userId;
-    if (!recipient) {
-      return res.status(400).json({
-        ok: false,
-        error: 'No recipient (userId/chatId). Open the mini app from the bot chat.'
-      });
+    // 2) иначе — это запрос из WebApp (наша форма)
+    const { text, chatId, userId, queryId } = body;
+    const message = `This message came from the Mini App!\n\n${text || ""}`.trim();
+
+    if (queryId) {
+      // инлайн-кнопка в сообщении
+      await tgAnswerWebAppQuery(queryId, "FormApp", message);
+      return res.json({ ok: true });
     }
 
-    await bot.telegram.sendMessage(
-      recipient,
-      `Got it: ${text}`
-    );
-    return res.json({ ok: true, mode: 'sendMessage', to: recipient });
-  } catch (err) {
-    console.error('POST /tg error:', err);
-    return res.status(500).json({ ok: false, error: 'Server error' });
+    const target = chatId || userId;
+    if (target) {
+      await tgSendMessage(target, message);
+      return res.json({ ok: true });
+    }
+
+    return res.status(400).json({ ok: false, error: "No recipient" });
+  } catch (e) {
+    console.error("Handler error:", e?.response?.data || e.message);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 
-// ===== webhook обработка Telegram (если нужен polling)
-bot.on('message', (ctx) => {
-  // Логируем входящие апдейты для диагностики
-  try {
-    const msg = ctx.update.message;
-    console.log('Incoming update:', JSON.stringify(msg));
-  } catch {}
+// корневая страница
+app.get("/", (_, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ===== старт сервера + polling (Render сам дёргает внешним https)
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`HTTP server on ${PORT}`);
-  // polling включаем — он совместим с Render free и не требует setWebhook
-  bot.launch().then(() => {
-    console.log('Bot launched with long polling');
-    console.log('Primary URL:', PUBLIC_URL);
-    console.log('Mini app path:', PUBLIC_URL + '/');
-  });
+  tgSetWebhook();
 });
-
-// Грейсфул шатдаун
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
