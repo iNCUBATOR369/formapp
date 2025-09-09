@@ -1,94 +1,77 @@
-// server.js — финальная версия (MVP)
-// Режим: webhook на Render. Получаем web_app_data из мини-приложения и отвечаем в чат.
-
-require('dotenv').config();
+// server.js
+// Полностью самодостаточный сервер: Express + Telegraf + Webhook
 const express = require('express');
-const path = require('path');
 const { Telegraf } = require('telegraf');
 
-const BOT_TOKEN  = process.env.BOT_TOKEN;
-const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, ''); // без трейлинг-слэша
-const PORT = process.env.PORT || 10000;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/,''); // https://formapp-xvb0.onrender.com
 
-if (!BOT_TOKEN) {
-  console.error('❌ BOT_TOKEN is missing in environment variables');
-  process.exit(1);
-}
-if (!PUBLIC_URL || !/^https:\/\//.test(PUBLIC_URL)) {
-  console.error('❌ PUBLIC_URL must be set and start with https:// (your Render URL)');
+if (!BOT_TOKEN || !PUBLIC_URL) {
+  console.error('❌ Missing env vars. BOT_TOKEN and PUBLIC_URL are required.');
   process.exit(1);
 }
 
-const app = express();
 const bot = new Telegraf(BOT_TOKEN);
 
-// --- 1) Статика мини-приложения ---
-app.use(express.static(path.join(__dirname, 'public')));
-
-// --- 2) Healthcheck (Render) ---
-app.get('/healthz', (_, res) => res.status(200).send('OK'));
-
-// --- 3) Webhook endpoint ---
-const hookPath = `/tg/${BOT_TOKEN}`;
-app.use(bot.webhookCallback(hookPath));
-
-// --- 4) Базовые хэндлеры бота ---
-
-// /start — отправляем клавиатуру с web_app-кнопкой, открывающей PUBLIC_URL
+// ===== Команды =====
 bot.start(async (ctx) => {
-  try {
-    await ctx.reply(
-      'Welcome to FormApp 👋\nTap the button below to open the mini app.',
-      {
-        reply_markup: {
-          keyboard: [
-            [
-              {
-                text: 'Open FormApp',
-                web_app: { url: PUBLIC_URL }, // откроет наше мини-приложение
-              },
-            ],
-          ],
-          resize_keyboard: true,
-          one_time_keyboard: false,
-        },
+  await ctx.reply(
+    'Welcome to FormApp 👋\nTap the button below to open the mini app.',
+    {
+      reply_markup: {
+        inline_keyboard: [[{ text: 'Web App', web_app: { url: PUBLIC_URL } }]]
       }
-    );
-  } catch (e) {
-    console.error('Error in /start:', e);
-  }
-});
-
-// /ping — простая проверка ответа бота
-bot.command('ping', (ctx) => ctx.reply('pong'));
-
-// Получение данных из мини-приложения (sendData)
-// Telegram присылает сообщение с полем web_app_data
-bot.on('message', async (ctx) => {
-  try {
-    const msg = ctx.message;
-    if (msg && msg.web_app_data && msg.web_app_data.data) {
-      // Строка, которую отправили из WebApp
-      const raw = msg.web_app_data.data;
-      let parsed = null;
-      try { parsed = JSON.parse(raw); } catch (_) {}
-
-      await ctx.reply(`Got it: ${parsed ? JSON.stringify(parsed) : raw}`);
     }
-  } catch (e) {
-    console.error('Error handling message:', e);
+  );
+});
+
+bot.command('ping', (ctx) => ctx.reply('pong'));
+bot.on('text', async (ctx) => {
+  // Игнорируем известные команды, чтобы не засорять чат
+  const txt = ctx.message.text || '';
+  if (/^\/(start|ping)\b/.test(txt)) return;
+  await ctx.reply("Unrecognized command. Say what?");
+});
+
+// ===== Приём данных из WebApp =====
+// ДАННЫЕ ПРИХОДЯТ СЮДА, когда в WebApp вызвали sendData() и пользователь закрыл окно.
+bot.on('message', async (ctx) => {
+  const msg = ctx.message;
+  const wad = msg?.web_app_data?.data; // <-- ВАЖНО: здесь лежит payload из sendData
+
+  if (wad) {
+    let parsed = wad;
+    try { parsed = JSON.parse(wad); } catch(e) {}
+    console.log('📥 web_app_data:', parsed);
+
+    const text = (typeof parsed === 'object' && parsed?.text) ? parsed.text : String(parsed);
+    await ctx.reply(`Got it: ${typeof parsed==='string' ? parsed : JSON.stringify(parsed)}`);
+    return;
   }
 });
 
-// --- 5) Запуск сервера и установка webhook ---
+// ===== HTTP сервер и webhook =====
+const app = express();
+
+// простой healthcheck
+app.get('/healthz', (_req, res) => res.send('ok'));
+
+// отдаём статику из /public (index.html)
+app.use(express.static('public'));
+
+// Telegram Webhook endpoint
+app.use(bot.webhookCallback('/tg'));
+
+const PORT = process.env.PORT || 10000;
+
 app.listen(PORT, async () => {
+  const webhookUrl = `${PUBLIC_URL}/tg`;
   try {
-    const fullHook = `${PUBLIC_URL}${hookPath}`;
-    await bot.telegram.setWebhook(fullHook);
-    console.log(`✅ HTTP server on ${PORT}`);
-    console.log(`✅ Webhook set to: ${fullHook}`);
-    console.log(`✅ Primary URL: ${PUBLIC_URL}`);
+    await bot.telegram.setWebhook(webhookUrl);
+    console.log('✅ HTTP server on', PORT);
+    console.log('✅ Webhook set to:', webhookUrl);
+    console.log('✅ Primary URL:', PUBLIC_URL);
   } catch (e) {
-    console.error('Failed to set webhook:', e);
+    console.error('❌ setWebhook error:', e);
   }
 });
