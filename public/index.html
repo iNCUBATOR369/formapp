@@ -29,6 +29,7 @@
       flex:1 1 auto; padding:12px 14px; border-radius:12px; border:0; outline:none;
       background:#fff; color:#111; box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);
     }
+    [data-theme="dark"] input{ background:#111; color:#eee; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
     .btn{
       appearance:none; border:0; border-radius:12px; padding:12px 16px; cursor:pointer;
       background:var(--primary); color:var(--primary-contrast); font-weight:600;
@@ -58,29 +59,38 @@
 
   <script>
     const tg = window.Telegram.WebApp;
-    // Приводим тему к текущей теме Телеграма
-    document.documentElement.dataset.theme = tg.colorScheme === 'dark' ? 'dark' : 'light';
+    const unsafe = tg.initDataUnsafe || {};
+
+    // --- инициализация темы из Telegram
+    function applyTheme(theme){
+      document.documentElement.dataset.theme = theme;
+      // подкрашиваем «системные» цвета Telegram для консистентности
+      if (theme === 'dark') {
+        tg.setHeaderColor('#0f1113');
+        tg.setBackgroundColor('#0f1113');
+      } else {
+        tg.setHeaderColor('#ffffff');
+        tg.setBackgroundColor('#ffffff');
+      }
+    }
+    applyTheme(tg.colorScheme === 'dark' ? 'dark' : 'light');
+
     tg.onEvent('themeChanged', () => {
-      document.documentElement.dataset.theme = tg.colorScheme === 'dark' ? 'dark' : 'light';
+      // если пользователь меняет системную тему в Телеграме — синхронизируемся
+      applyTheme(tg.colorScheme === 'dark' ? 'dark' : 'light');
     });
 
-    // Показываем бэкенду, кто мы и из какого контекста открылись
+    // показать немного контекста
     const meta = document.getElementById('meta');
-    const unsafe = tg.initDataUnsafe || {};
     meta.textContent =
-      `User: ${unsafe?.user?.username || unsafe?.user?.id || 'n/a'} ` +
-      `| Chat: ${unsafe?.chat?.id || 'n/a'} ` +
-      `| Via: ${unsafe?.start_param ? 'inline-button' : 'menu'}`;
+      `User: ${unsafe?.user?.username || unsafe?.user?.id || 'n/a'} | ` +
+      `Chat: ${unsafe?.chat?.id || 'n/a'} | ` +
+      `Via: ${unsafe?.query_id ? 'inline-button' : 'menu'}`;
 
-    // Надёжно определяем получателя: userId или chatId
     function resolveRecipient() {
-      // 1) чаще всего есть user.id
       const userId = unsafe?.user?.id;
-      // 2) иногда есть chat.id
       const chatId = unsafe?.chat?.id;
-      // 3) иногда Telegram отдаёт из-под web_app_query только queryId (для inline кнопки)
       const queryId = unsafe?.query_id;
-
       return { userId, chatId, queryId };
     }
 
@@ -92,24 +102,15 @@
         const res = await fetch('/tg', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            // Передаём всё, что может пригодиться серверу для выбора стратегии
-            userId,
-            chatId,
-            queryId,
-            initData: tg.initData || '', // строка для возможной валидации/диагностики
-          })
+          body: JSON.stringify({ text, userId, chatId, queryId, initData: tg.initData || '' })
         });
-
         const ok = res.ok;
         const data = await res.json().catch(()=>({}));
 
         if (ok) {
-          // Нативный попап Telegram
-          tg.showPopup({ title: 'Sent', message: 'Close this window to see the bot reply in chat.', buttons: [{id:'ok',type:'close',text:'Close'}] });
-          // На всякий случай закрываем WebApp сами через 600мс (бывает, что юзер не нажмёт)
-          setTimeout(()=>tg.close(), 600);
+          // без зависающей модалки: лёгкий алерт и авто-закрытие окна
+          tg.showAlert('Sent! Check the reply in chat.');
+          setTimeout(() => tg.close(), 150);
         } else {
           tg.showAlert(data?.error || 'Failed to send');
         }
@@ -118,8 +119,13 @@
       }
     }
 
+    // локальный переключатель темы (вне зависимости от системной)
+    document.getElementById('toggle').addEventListener('click', () => {
+      const current = document.documentElement.dataset.theme || 'light';
+      applyTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
     document.getElementById('send').addEventListener('click', sendToBot);
-    document.getElementById('toggle').addEventListener('click', () => tg.setHeaderColor(tg.colorScheme === 'dark' ? '#ffffff' : '#0f1113'));
     document.getElementById('close').addEventListener('click', () => tg.close());
   </script>
 </body>
