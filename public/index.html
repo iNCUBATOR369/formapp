@@ -27,21 +27,21 @@
       --card: #16181c;
       --input-bg: #1e2229;
     }
-    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg);
+    html, body { height:100%; margin:0; background:var(--bg); color:var(--fg);
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 32px; }
     .card { background: var(--card); border-radius: var(--radius); padding: 20px;
       box-shadow: 0 8px 28px rgba(0,0,0,.08); }
-    h1 { margin: 0 0 12px; }
-    p { margin: 0 0 16px; color: var(--muted); }
-    .row { display: flex; gap: 8px; }
-    input { flex: 1; height: 44px; padding: 0 12px; border: none; border-radius: 12px;
-      outline: none; color: var(--fg); background: var(--input-bg); }
-    button { height: 44px; padding: 0 14px; border-radius: 12px; border: none;
-      background: var(--primary); color: var(--primary-contrast); font-weight: 600; cursor: pointer; }
-    button.secondary { background: transparent; color: var(--fg); border: 1px solid #0003; }
-    button:disabled { opacity: .6; cursor: default; }
-    .meta { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    h1 { margin:0 0 12px; }
+    p  { margin:0 0 16px; color:var(--muted); }
+    .row { display:flex; gap:8px; }
+    input { flex:1; height:44px; padding:0 12px; border:none; border-radius:12px; outline:none;
+      color:var(--fg); background:var(--input-bg); }
+    button { height:44px; padding:0 14px; border-radius:12px; border:none;
+      background:var(--primary); color:var(--primary-contrast); font-weight:600; cursor:pointer; }
+    button.secondary { background:transparent; color:var(--fg); border:1px solid #0003; }
+    button:disabled { opacity:.6; cursor:default; }
+    .meta { margin-top:6px; color:var(--muted); font-size:12px; }
     .topbar { display:flex; gap:8px; justify-content:flex-end; margin-bottom:12px; }
   </style>
 </head>
@@ -67,7 +67,7 @@
   <script>
     const tg = window.Telegram.WebApp;
 
-    // ---------- Тема ----------
+    // -------- ТЕМА --------
     function applyThemeFromTelegram() {
       const scheme = tg.colorScheme === "dark" ? "dark" : "light";
       document.documentElement.dataset.theme = scheme;
@@ -90,48 +90,61 @@
       localStorage.setItem("formapp_theme_fixed", "1");
     });
 
-    // ---------- UI ----------
+    // -------- UI / отправка --------
     tg.expand();
 
-    const u = tg.initDataUnsafe?.user;
+    const user = tg.initDataUnsafe?.user;
+    const userId = user?.id;
     document.getElementById("user").textContent =
-      u ? (u.username ? `@${u.username}` : `id:${u.id}`) : "unknown";
+      user ? (user.username ? `@${user.username}` : `id:${user.id}`) : "unknown";
 
-    const input = document.getElementById("text");
+    const input   = document.getElementById("text");
     const sendBtn = document.getElementById("send");
 
-    // Определяем точку входа:
-    // если есть start_param — это Open FormApp (deep link). Иначе — Web App кнопка.
+    // если есть start_param — это Open FormApp (deep link); иначе — Web App кнопка
     const isStartApp = Boolean(tg.initDataUnsafe?.start_param);
 
-    // Для Web App даём чуть больше времени телеге принять sendData.
-    const SEND_DELAY = isStartApp ? 450 : 950;
-
-    sendBtn.addEventListener("click", () => {
+    sendBtn.addEventListener("click", async () => {
       const text = (input.value || "").trim() || "This message came from the Mini App!";
       sendBtn.disabled = true;
 
-      try {
-        tg.sendData(JSON.stringify({ type: "form", text }));
-      } catch (e) {
-        tg.showAlert("Error: " + (e?.message || e));
-        sendBtn.disabled = false;
-        return;
-      }
-
-      setTimeout(() => {
-        let closed = false;
+      if (isStartApp) {
+        // --- Open FormApp: надёжно через sendData ---
         try {
-          tg.close();
-          closed = true;
-        } catch (_) {}
-
-        if (!closed) {
-          // запасной вариант, если закрыть из клиента нельзя
-          tg.showAlert("Sent!");
+          tg.sendData(JSON.stringify({ type: "form", text }));
+        } catch (e) {
+          tg.showAlert("Error: " + (e?.message || e));
+          sendBtn.disabled = false;
+          return;
+        }
+        setTimeout(() => {
+          try { tg.close(); } catch (_) { tg.showAlert("Sent!"); }
+          sendBtn.disabled = false;
+        }, 450);
+      } else {
+        // --- Web App: шлём напрямую на сервер ---
+        if (!userId) {
+          tg.showAlert("Error: user id not available");
+          sendBtn.disabled = false;
+          return;
+        }
+        try {
+          const r = await fetch("/api/webapp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, text })
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || !j.ok) {
+            throw new Error(j?.error || "server error");
+          }
+          try { tg.close(); } catch (_) { tg.showAlert("Sent!"); }
+        } catch (e) {
+          tg.showAlert("Error: " + (e?.message || e));
+        } finally {
           sendBtn.disabled = false;
         }
-      }, SEND_DELAY);
+      }
     });
   </script>
 </body>
