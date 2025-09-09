@@ -6,42 +6,22 @@
   <title>FormApp</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root {
-      --bg:#ffffff; --fg:#111111; --muted:#6a6a6a; --primary:#0a84ff;
-      --primary-contrast:#ffffff; --card:#f5f7fb; --radius:16px;
-    }
-    [data-theme="dark"] {
-      --bg:#0f1113; --fg:#eeeeee; --muted:#9aa4af; --primary:#39a0ff;
-      --primary-contrast:#00111a; --card:#15181b;
-    }
+    :root { --bg:#fff; --fg:#111; --muted:#6a6a6a; --primary:#0a84ff; --card:#f5f7fb; --radius:16px }
+    [data-theme="dark"] { --bg:#0f1113; --fg:#eee; --muted:#9aa4af; --primary:#39a0ff; --card:#15181b }
     html,body{height:100%}
-    body{
-      margin:0; font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;
-      background:var(--bg); color:var(--fg); display:grid; place-items:center;
-    }
-    .card{
-      width:min(720px,92vw); background:var(--card); padding:24px; border-radius:var(--radius);
-      box-shadow:0 8px 28px rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.06);
-    }
-    h1{margin:0 0 12px}
-    .row{display:flex; gap:10px; margin-top:12px}
-    input{
-      flex:1 1 auto; padding:12px 14px; border-radius:12px; border:0; outline:none;
-      background:#fff; color:#111; box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);
-    }
-    [data-theme="dark"] input{ background:#111; color:#eee; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
-    .btn{
-      appearance:none; border:0; border-radius:12px; padding:12px 16px; cursor:pointer;
-      background:var(--primary); color:var(--primary-contrast); font-weight:600;
-      box-shadow:0 6px 18px rgba(10,132,255,.25);
-    }
-    .ghost{background:transparent; color:var(--fg); box-shadow:none}
+    body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;display:grid;place-items:center}
+    .card{width:min(720px,92vw);background:var(--card);padding:24px;border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.08),0 2px 8px rgba(0,0,0,.06)}
+    .row{display:flex;gap:10px;margin-top:12px}
+    input{flex:1;padding:12px 14px;border-radius:12px;border:0;outline:none;background:#fff;color:#111;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+    [data-theme="dark"] input{background:#111;color:#eee;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+    .btn{appearance:none;border:0;border-radius:12px;padding:12px 16px;cursor:pointer;background:var(--primary);color:#fff;font-weight:600;box-shadow:0 6px 18px rgba(10,132,255,.25)}
+    .ghost{background:transparent;color:var(--fg);box-shadow:none}
     small{color:var(--muted)}
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Welcome to FormApp 👋</h1>
+    <h2>Welcome to FormApp 👋</h2>
     <p>Type any text below and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
 
     <div class="row">
@@ -61,10 +41,9 @@
     const tg = window.Telegram.WebApp;
     const unsafe = tg.initDataUnsafe || {};
 
-    // --- инициализация темы из Telegram
+    // --- тема
     function applyTheme(theme){
       document.documentElement.dataset.theme = theme;
-      // подкрашиваем «системные» цвета Telegram для консистентности
       if (theme === 'dark') {
         tg.setHeaderColor('#0f1113');
         tg.setBackgroundColor('#0f1113');
@@ -74,59 +53,67 @@
       }
     }
     applyTheme(tg.colorScheme === 'dark' ? 'dark' : 'light');
+    tg.onEvent('themeChanged', () => applyTheme(tg.colorScheme === 'dark' ? 'dark' : 'light'));
 
-    tg.onEvent('themeChanged', () => {
-      // если пользователь меняет системную тему в Телеграме — синхронизируемся
-      applyTheme(tg.colorScheme === 'dark' ? 'dark' : 'light');
+    document.getElementById('toggle').addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme || 'light';
+      applyTheme(cur === 'dark' ? 'light' : 'dark');
     });
 
     // показать немного контекста
-    const meta = document.getElementById('meta');
-    meta.textContent =
+    document.getElementById('meta').textContent =
       `User: ${unsafe?.user?.username || unsafe?.user?.id || 'n/a'} | ` +
       `Chat: ${unsafe?.chat?.id || 'n/a'} | ` +
-      `Via: ${unsafe?.query_id ? 'inline-button' : 'menu'}`;
+      `Query: ${unsafe?.query_id ? 'inline' : 'none'} | ` +
+      `Source: ${unsafe?.start_param ? 'start_param' : 'webApp'}`;
 
-    function resolveRecipient() {
-      const userId = unsafe?.user?.id;
-      const chatId = unsafe?.chat?.id;
-      const queryId = unsafe?.query_id;
-      return { userId, chatId, queryId };
+    function safeClose() {
+      try { tg.close(); } catch(e) {}
+      // фолбэк на клиенты, у которых close() глючит
+      setTimeout(() => {
+        try { window.close(); } catch(e) {}
+        try { history.back(); } catch(e) {}
+        // крайний случай — уводим со страницы
+        try { location.href = 'about:blank'; } catch(e) {}
+      }, 120);
     }
 
-    async function sendToBot() {
+    async function sendViaServer(payload) {
+      const res = await fetch('/tg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      return res.json().catch(()=> ({}));
+    }
+
+    async function onSend() {
       const text = (document.getElementById('msg').value || '').trim() || 'This message came from the Mini App!';
-      const { userId, chatId, queryId } = resolveRecipient();
 
-      try {
-        const res = await fetch('/tg', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, userId, chatId, queryId, initData: tg.initData || '' })
-        });
-        const ok = res.ok;
-        const data = await res.json().catch(()=>({}));
-
-        if (ok) {
-          // без зависающей модалки: лёгкий алерт и авто-закрытие окна
-          tg.showAlert('Sent! Check the reply in chat.');
-          setTimeout(() => tg.close(), 150);
-        } else {
-          tg.showAlert(data?.error || 'Failed to send');
-        }
-      } catch (e) {
-        tg.showAlert('Network error: ' + (e?.message || e));
+      // режим 2: инлайн-кнопка (есть query_id) → answerWebAppQuery
+      if (unsafe?.query_id) {
+        await sendViaServer({ text, queryId: unsafe.query_id, initData: tg.initData || '' });
+        tg.showAlert('Sent!');
+        return safeClose();
       }
+
+      // режим 3: attach-панель («Open FormApp» справа) → sendData
+      // в этом режиме chat в initData обычно отсутствует
+      if (!unsafe?.chat) {
+        tg.sendData(JSON.stringify({ type:'form', text }));
+        tg.showAlert('Sent!');
+        return safeClose();
+      }
+
+      // режим 1: меню бота → обычный sendMessage
+      const recipient = unsafe.chat?.id || unsafe.user?.id;
+      await sendViaServer({ text, chatId: recipient, initData: tg.initData || '' });
+      tg.showAlert('Sent!');
+      return safeClose();
     }
 
-    // локальный переключатель темы (вне зависимости от системной)
-    document.getElementById('toggle').addEventListener('click', () => {
-      const current = document.documentElement.dataset.theme || 'light';
-      applyTheme(current === 'dark' ? 'light' : 'dark');
-    });
-
-    document.getElementById('send').addEventListener('click', sendToBot);
-    document.getElementById('close').addEventListener('click', () => tg.close());
+    document.getElementById('send').addEventListener('click', onSend);
+    document.getElementById('close').addEventListener('click', safeClose);
   </script>
 </body>
 </html>
