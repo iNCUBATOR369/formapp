@@ -1,77 +1,107 @@
 // server.js
-// Полностью самодостаточный сервер: Express + Telegraf + Webhook
+// Полностью готовый сервер: обслуживает мини-апп и принимает события из него.
+// Работают ОДНОВРЕМЕННО два сценария:
+// 1) открытие по inline-кнопке (web_app_query) → answerWebAppQuery()
+// 2) открытие по кнопке Web App в меню бота → обычное sendMessage(chat_id)
+
 const express = require('express');
+const bodyParser = require('body-parser');
+const path = require('path');
 const { Telegraf } = require('telegraf');
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/,''); // https://formapp-xvb0.onrender.com
+const BOT_TOKEN  = process.env.BOT_TOKEN;
+const PUBLIC_URL = process.env.PUBLIC_URL; // например: https://formapp-xvb0.onrender.com
 
-if (!BOT_TOKEN || !PUBLIC_URL) {
-  console.error('❌ Missing env vars. BOT_TOKEN and PUBLIC_URL are required.');
+if (!BOT_TOKEN) {
+  console.error('BOT_TOKEN is not set!');
+  process.exit(1);
+}
+if (!PUBLIC_URL) {
+  console.error('PUBLIC_URL is not set!');
   process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
-
-// ===== Команды =====
-bot.start(async (ctx) => {
-  await ctx.reply(
-    'Welcome to FormApp 👋\nTap the button below to open the mini app.',
-    {
-      reply_markup: {
-        inline_keyboard: [[{ text: 'Web App', web_app: { url: PUBLIC_URL } }]]
-      }
-    }
-  );
-});
-
-bot.command('ping', (ctx) => ctx.reply('pong'));
-bot.on('text', async (ctx) => {
-  // Игнорируем известные команды, чтобы не засорять чат
-  const txt = ctx.message.text || '';
-  if (/^\/(start|ping)\b/.test(txt)) return;
-  await ctx.reply("Unrecognized command. Say what?");
-});
-
-// ===== Приём данных из WebApp =====
-// ДАННЫЕ ПРИХОДЯТ СЮДА, когда в WebApp вызвали sendData() и пользователь закрыл окно.
-bot.on('message', async (ctx) => {
-  const msg = ctx.message;
-  const wad = msg?.web_app_data?.data; // <-- ВАЖНО: здесь лежит payload из sendData
-
-  if (wad) {
-    let parsed = wad;
-    try { parsed = JSON.parse(wad); } catch(e) {}
-    console.log('📥 web_app_data:', parsed);
-
-    const text = (typeof parsed === 'object' && parsed?.text) ? parsed.text : String(parsed);
-    await ctx.reply(`Got it: ${typeof parsed==='string' ? parsed : JSON.stringify(parsed)}`);
-    return;
-  }
-});
-
-// ===== HTTP сервер и webhook =====
 const app = express();
+app.use(bodyParser.json());
 
-// простой healthcheck
-app.get('/healthz', (_req, res) => res.send('ok'));
+// ===== serve mini app (статические файлы)
+app.use(express.static(path.join(__dirname, 'public')));
 
-// отдаём статику из /public (index.html)
-app.use(express.static('public'));
+// ===== healthcheck (Render)
+app.get('/healthz', (_, res) => res.send('OK'));
 
-// Telegram Webhook endpoint
-app.use(bot.webhookCallback('/tg'));
+// ===== простой пинг-команд для проверки
+bot.command('start', (ctx) =>
+  ctx.reply('Welcome to FormApp 👋\nTap the button below to open the mini app.',
+    { reply_markup: { inline_keyboard: [[{ text: 'Web App', web_app: { url: PUBLIC_URL } }]] } }
+  )
+);
+bot.command('ping', (ctx) => ctx.reply('pong'));
 
-const PORT = process.env.PORT || 10000;
-
-app.listen(PORT, async () => {
-  const webhookUrl = `${PUBLIC_URL}/tg`;
+// ===== webhook для mini-app (унифицированный)
+app.post('/tg', async (req, res) => {
   try {
-    await bot.telegram.setWebhook(webhookUrl);
-    console.log('✅ HTTP server on', PORT);
-    console.log('✅ Webhook set to:', webhookUrl);
-    console.log('✅ Primary URL:', PUBLIC_URL);
-  } catch (e) {
-    console.error('❌ setWebhook error:', e);
+    const { text, userId, chatId, queryId } = req.body || {};
+
+    if (!text) {
+      return res.status(400).json({ ok: false, error: 'No text' });
+    }
+
+    // 1) inline-кнопка → есть queryId → шлём answerWebAppQuery
+    if (queryId) {
+      await bot.telegram.answerWebAppQuery(queryId, {
+        type: 'article',
+        id: String(Date.now()),
+        title: 'Message received',
+        input_message_content: {
+          message_text: `Got it: ${text}`
+        }
+      });
+      return res.json({ ok: true, mode: 'answerWebAppQuery' });
+    }
+
+    // 2) кнопка в меню → нет queryId → шлём обычное сообщение пользователю/в чат
+    const recipient = chatId || userId;
+    if (!recipient) {
+      return res.status(400).json({
+        ok: false,
+        error: 'No recipient (userId/chatId). Open the mini app from the bot chat.'
+      });
+    }
+
+    await bot.telegram.sendMessage(
+      recipient,
+      `Got it: ${text}`
+    );
+    return res.json({ ok: true, mode: 'sendMessage', to: recipient });
+  } catch (err) {
+    console.error('POST /tg error:', err);
+    return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
+
+// ===== webhook обработка Telegram (если нужен polling)
+bot.on('message', (ctx) => {
+  // Логируем входящие апдейты для диагностики
+  try {
+    const msg = ctx.update.message;
+    console.log('Incoming update:', JSON.stringify(msg));
+  } catch {}
+});
+
+// ===== старт сервера + polling (Render сам дёргает внешним https)
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`HTTP server on ${PORT}`);
+  // polling включаем — он совместим с Render free и не требует setWebhook
+  bot.launch().then(() => {
+    console.log('Bot launched with long polling');
+    console.log('Primary URL:', PUBLIC_URL);
+    console.log('Mini app path:', PUBLIC_URL + '/');
+  });
+});
+
+// Грейсфул шатдаун
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
