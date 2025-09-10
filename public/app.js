@@ -1,77 +1,65 @@
-// public/app.js
 (() => {
   const tg = window.Telegram?.WebApp;
-  if (!tg) {
-    alert('Telegram WebApp SDK not found');
-    return;
-  }
-
-  tg.expand(); // безопасно
-  tg.ready();
+  tg?.expand();
+  tg?.ready();
 
   const input = document.querySelector('#msg');
   const sendBtn = document.querySelector('#sendBtn');
   const themeBtn = document.querySelector('#themeBtn');
+  const userDiv = document.querySelector('#user');
 
-  // Примитивный индикатор/блокировка
-  const setBusy = (v) => {
-    sendBtn.disabled = v;
-    sendBtn.textContent = v ? 'Sending…' : 'Send to bot';
-  };
+  if (tg?.initDataUnsafe?.user) {
+    const u = tg.initDataUnsafe.user;
+    userDiv.textContent = `User: ${u.username ? '@'+u.username : u.first_name}`;
+  }
 
-  // Тема (оставляю как было)
   const applyTheme = () => {
-    const isDark = tg.colorScheme === 'dark' || tg.themeParams?.bg_color === '#000000';
+    const isDark = tg?.colorScheme === 'dark';
     document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
   };
   applyTheme();
-  tg.onEvent('themeChanged', applyTheme);
+  tg?.onEvent('themeChanged', applyTheme);
 
-  themeBtn?.addEventListener('click', () => {
-    // чисто для демо — дергаем alert, тему в Telegram меняют пользователи в настройках
-    tg.showAlert(`Theme: ${document.documentElement.dataset.theme}`);
-  });
-
-  // === КЛЮЧЕВОЙ ФИКС: ждём fetch -> ждём ответ Telegram -> только потом закрываем ===
   sendBtn.addEventListener('click', async () => {
-    const text = (input.value || '').trim() || 'This message came from the Mini App!';
-    const chatId = tg.initDataUnsafe?.user?.id; // приватный чат = user.id
+    const text = input.value.trim();
+    const chatId = tg?.initDataUnsafe?.user?.id;
 
     if (!chatId) {
-      tg.showAlert('No chat_id in initData. Open this Mini App from a private chat with the bot.');
+      tg.showAlert('chat_id not found. Open bot in private chat.');
       return;
     }
 
-    setBusy(true);
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+
     try {
       const res = await fetch('/tg/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text })
       });
+      const data = await res.json().catch(()=> ({}));
 
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok || !data.ok) {
-        // Покажем реальную причину, чтобы было понятно
-        const reason = data?.description || `${res.status} ${res.statusText}`;
-        tg.showAlert(`Error: ${reason}`);
-        setBusy(false);
-        return;
+      if (res.ok && data.ok) {
+        tg.showPopup({
+          title: 'Telegram',
+          message: 'Sent!',
+          buttons: [{ type: 'close' }]
+        });
+        setTimeout(() => tg.close(), 250);
+      } else {
+        tg.showAlert(data.description || 'Error sending');
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send to bot';
       }
-
-      // Успех: теперь можно закрывать
-      tg.showPopup({
-        title: 'Telegram',
-        message: 'Sent!',
-        buttons: [{ type: 'close' }]
-      });
-
-      // Маленькая задержка, чтобы пользователь успел увидеть "Sent!"
-      setTimeout(() => tg.close(), 250);
-    } catch (err) {
-      tg.showAlert(`Network error: ${err?.message || err}`);
-      setBusy(false);
+    } catch (e) {
+      tg.showAlert('Network error: ' + e.message);
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send to bot';
     }
+  });
+
+  themeBtn.addEventListener('click', () => {
+    tg.showAlert(`Theme: ${document.documentElement.dataset.theme}`);
   });
 })();
