@@ -1,26 +1,100 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>FormApp</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <main class="card">
-    <h1>Welcome to FormApp 👋</h1>
-    <p class="muted">Type any text and press <b>Send to bot</b>. The bot will publish it in the chat.</p>
-
-    <div class="row">
-      <input id="msg" placeholder="This message came from the Mini App!" />
-      <button id="send">Send to bot</button>
-      <button id="toggle" class="ghost">Toggle theme</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>FormApp</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #111111;
+        --card: #f5f7fb;
+        --primary: #0a84ff;
+      }
+      [data-theme="dark"] {
+        --bg: #0f0f0f;
+        --fg: #f2f2f2;
+        --card: #1b1d20;
+        --primary: #64b5ff;
+      }
+      html, body {
+        margin: 0; padding: 0;
+        background: var(--bg); color: var(--fg);
+        font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .wrap {
+        max-width: 720px; margin: 24px auto; padding: 16px;
+      }
+      .card {
+        background: var(--card); border-radius: 12px;
+        padding: 16px;
+      }
+      input {
+        width: 100%; padding: 12px 14px; font-size: 16px;
+        border: 1px solid #dcdfe5; border-radius: 8px; outline: none;
+        background: #fff; color: #111;
+      }
+      .row { display: flex; gap: 12px; margin-top: 12px; }
+      button {
+        flex: 1; padding: 12px 16px; border: 0; border-radius: 10px;
+        background: var(--primary); color: #fff; font-weight: 600; cursor: pointer;
+      }
+      .muted { font-size: 12px; opacity: .7; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h2>Welcome to FormApp 👋</h2>
+      <div class="card">
+        <input id="msg" type="text" value="This message came from the Mini App!" />
+        <div class="row">
+          <button id="send">Send to bot</button>
+          <button id="theme">Toggle theme</button>
+        </div>
+        <div class="muted" id="user"></div>
+      </div>
     </div>
 
-    <p class="meta">User: <span id="who">—</span></p>
-  </main>
+    <script>
+      const tg = window.Telegram?.WebApp;
+      if (tg) {
+        // Тема по телеграму
+        const isDark = tg.colorScheme === "dark";
+        document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
 
-  <script src="/app.js"></script>
-</body>
+        // Размер
+        tg.expand();
+
+        // Данные юзера
+        const u = tg.initDataUnsafe?.user;
+        if (u) {
+          document.getElementById("user").textContent =
+            `User: ${u.username ? '@' + u.username : (u.first_name || 'unknown')}`;
+        }
+      }
+
+      document.getElementById("theme").onclick = () => {
+        const cur = document.documentElement.getAttribute("data-theme") === "dark";
+        document.documentElement.setAttribute("data-theme", cur ? "light" : "dark");
+      };
+
+      document.getElementById("send").onclick = () => {
+        const text = document.getElementById("msg").value.trim();
+        const payload = JSON.stringify({ type: "form", text });
+
+        // НИЧЕГО не шлём на сервер!
+        // Только sendData -> бот получит message.web_app_data.data
+        try {
+          window.Telegram.WebApp.sendData(payload);
+        } catch (_) {}
+
+        // Закрываем окно (в меню и в правой кнопке Telegram сам корректно закрывает)
+        try {
+          window.Telegram.WebApp.close();
+        } catch (_) {}
+      };
+    </script>
+  </body>
 </html>
