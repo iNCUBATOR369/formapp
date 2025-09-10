@@ -1,22 +1,21 @@
 import express from "express";
+import fetch from "node-fetch";
 import TelegramBot from "node-telegram-bot-api";
 
-const TOKEN = process.env.BOT_TOKEN;
-const PUBLIC_URL = process.env.PUBLIC_URL; // например: https://formapp-xvb0.onrender.com  (без слэша на конце!)
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PUBLIC_URL = process.env.PUBLIC_URL;
 
-if (!TOKEN || !PUBLIC_URL) {
-  console.error("❌ Set BOT_TOKEN and PUBLIC_URL env vars");
+if (!BOT_TOKEN || !PUBLIC_URL) {
+  console.error("❌ Missing BOT_TOKEN or PUBLIC_URL");
   process.exit(1);
 }
 
 const app = express();
 app.use(express.json());
 
-// --- Telegram bot in webhook mode ---
-const bot = new TelegramBot(TOKEN, { webHook: true });
-
-// Вебхук будет: https://<host>/tg/<token>
-const WEBHOOK_PATH = `/tg/${TOKEN}`;
+// --- Telegram bot (webhook) ---
+const bot = new TelegramBot(BOT_TOKEN, { webHook: true });
+const WEBHOOK_PATH = `/tg/${BOT_TOKEN}`;
 const WEBHOOK_URL = `${PUBLIC_URL}${WEBHOOK_PATH}`;
 
 async function ensureWebhook() {
@@ -24,9 +23,7 @@ async function ensureWebhook() {
     const info = await bot.getWebHookInfo();
     if (info.url !== WEBHOOK_URL) {
       await bot.setWebHook(WEBHOOK_URL);
-      console.log("✅ Webhook set to:", WEBHOOK_URL);
-    } else {
-      console.log("ℹ️ Webhook already set:", WEBHOOK_URL);
+      console.log("✅ Webhook set:", WEBHOOK_URL);
     }
   } catch (e) {
     console.error("Webhook error:", e.message);
@@ -39,26 +36,25 @@ app.post(WEBHOOK_PATH, (req, res) => {
   res.sendStatus(200);
 });
 
-// --- Команды ---
+// --- команды ---
 bot.onText(/^\/start\b/i, async (msg) => {
   const chatId = msg.chat.id;
-  const kb = {
-    keyboard: [
-      [
-        {
-          text: "Open FormApp",
-          web_app: { url: PUBLIC_URL } // открытие мини-аппа из обычного меню
-        }
-      ]
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: false
-  };
-
   await bot.sendMessage(
     chatId,
-    "Welcome to FormApp 👋\nTap the button below to open the mini app.",
-    { reply_markup: kb }
+    "Welcome to FormApp 👋\nTap below to open Mini App",
+    {
+      reply_markup: {
+        keyboard: [
+          [
+            {
+              text: "Open FormApp",
+              web_app: { url: PUBLIC_URL }
+            }
+          ]
+        ],
+        resize_keyboard: true
+      }
+    }
   );
 });
 
@@ -66,33 +62,43 @@ bot.onText(/^\/ping\b/i, (msg) => {
   bot.sendMessage(msg.chat.id, "pong");
 });
 
-// Приход данных из мини-аппа (из Menu и из правой кнопки «Open FormApp»):
+// --- web_app_data (из sendData) ---
 bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-
-  // Если мини-апп прислал данные
-  if (msg.web_app_data && msg.web_app_data.data) {
+  if (msg.web_app_data?.data) {
     let text = msg.web_app_data.data;
     try {
       const parsed = JSON.parse(text);
-      if (typeof parsed === "object" && parsed.text) text = parsed.text;
-    } catch (_) {
-      // оставляем как есть
-    }
-
-    await bot.sendMessage(chatId, `Got it from Mini App: ${text}`);
+      if (parsed.text) text = parsed.text;
+    } catch {}
+    await bot.sendMessage(msg.chat.id, `Got it: ${text}`);
   }
 });
 
-// --- статика мини-аппа ---
-app.use(express.static("public"));
+// --- ручка для Web App (fetch -> Telegram) ---
+app.post("/tg/send", async (req, res) => {
+  try {
+    const { chat_id, text } = req.body || {};
+    if (!chat_id || !text) {
+      return res.status(400).json({ ok: false, description: "Missing chat_id or text" });
+    }
 
-// живой корень (health check)
-app.get("/", (_req, res) => {
-  res.send("FormApp is live");
+    const tgRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id, text })
+    });
+
+    const data = await tgRes.json();
+    return res.status(tgRes.ok ? 200 : 500).json(data);
+  } catch (err) {
+    return res.status(500).json({ ok: false, description: err.message });
+  }
 });
 
-// Render ожидает 10000/0.0.0.0
+// --- статика ---
+app.use(express.static("public"));
+app.get("/", (_req, res) => res.send("FormApp is live"));
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`HTTP server on ${PORT}`);
