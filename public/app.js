@@ -1,65 +1,63 @@
-(() => {
-  const tg = window.Telegram?.WebApp;
-  tg?.expand();
-  tg?.ready();
+// Инициализация Telegram WebApp API
+const tg = window.Telegram.WebApp;
 
-  const input = document.querySelector('#msg');
-  const sendBtn = document.querySelector('#sendBtn');
-  const themeBtn = document.querySelector('#themeBtn');
-  const userDiv = document.querySelector('#user');
+// Приводим UI к текущей цветовой схеме Telegram (light/dark)
+function applyThemeFromTelegram() {
+  const scheme = tg.colorScheme || "light";
+  document.documentElement.dataset.theme = scheme;
+}
+applyThemeFromTelegram();
 
-  if (tg?.initDataUnsafe?.user) {
-    const u = tg.initDataUnsafe.user;
-    userDiv.textContent = `User: ${u.username ? '@'+u.username : u.first_name}`;
+// Небольшой хелпер для изменения темы вручную
+function toggleTheme() {
+  const now =
+    document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = now;
+
+  // Также красим «системные» цвета хедера/фона в Telegram
+  if (now === "dark") {
+    tg.setHeaderColor("#171a21");
+    tg.setBackgroundColor("#0f1115");
+  } else {
+    tg.setHeaderColor("#ffffff");
+    tg.setBackgroundColor("#f5f7fb");
   }
+}
 
-  const applyTheme = () => {
-    const isDark = tg?.colorScheme === 'dark';
-    document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
-  };
-  applyTheme();
-  tg?.onEvent('themeChanged', applyTheme);
+tg.onEvent("themeChanged", applyThemeFromTelegram);
+tg.expand();
+tg.ready();
 
-  sendBtn.addEventListener('click', async () => {
-    const text = input.value.trim();
-    const chatId = tg?.initDataUnsafe?.user?.id;
+// Элементы UI
+const $msg = document.getElementById("msg");
+const $send = document.getElementById("sendBtn");
+const $theme = document.getElementById("themeBtn");
+const $user = document.getElementById("userInfo");
 
-    if (!chatId) {
-      tg.showAlert('chat_id not found. Open bot in private chat.');
-      return;
-    }
+// Пишем юзера (если Telegram дал)
+if (tg.initDataUnsafe?.user) {
+  const u = tg.initDataUnsafe.user;
+  const name = [u.first_name, u.last_name].filter(Boolean).join(" ");
+  $user.textContent =
+    `User: ${name} ${u.username ? `(@${u.username})` : ""}`.trim();
+}
 
-    sendBtn.disabled = true;
-    sendBtn.textContent = 'Sending…';
+// Отправка сообщения — ЕДИНЫМ способом через tg.sendData
+// Это одинаково работает и из Menu Web App, и из "Web App"-кнопки в чате.
+$send.addEventListener("click", () => {
+  const text =
+    ($msg.value || "This message came from the Mini App!").slice(0, 4096);
 
-    try {
-      const res = await fetch('/tg/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text })
-      });
-      const data = await res.json().catch(()=> ({}));
+  tg.sendData(
+    JSON.stringify({
+      type: "form",
+      text
+    })
+  );
 
-      if (res.ok && data.ok) {
-        tg.showPopup({
-          title: 'Telegram',
-          message: 'Sent!',
-          buttons: [{ type: 'close' }]
-        });
-        setTimeout(() => tg.close(), 250);
-      } else {
-        tg.showAlert(data.description || 'Error sending');
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send to bot';
-      }
-    } catch (e) {
-      tg.showAlert('Network error: ' + e.message);
-      sendBtn.disabled = false;
-      sendBtn.textContent = 'Send to bot';
-    }
-  });
+  // Закрываем мини-апп сразу — сообщение придёт боту как web_app_data
+  tg.close();
+});
 
-  themeBtn.addEventListener('click', () => {
-    tg.showAlert(`Theme: ${document.documentElement.dataset.theme}`);
-  });
-})();
+// Переключение темы
+$theme.addEventListener("click", toggleTheme);
