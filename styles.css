@@ -1,1 +1,25 @@
-
+:root {
+  --bg: #fff;
+  --fg: #111;
+  --card: #f5f7fb;
+  --primary: #0a84ff;
+}
+[data-theme="dark"] {
+  --bg: #0f0f0f;
+  --fg: #f2f2f2;
+  --card: #1b1d20;
+  --primary: #64b5ff;
+}
+html, body {
+  margin:0; padding:0;
+  background:var(--bg); color:var(--fg);
+  font:16px system-ui,sans-serif;
+}
+.wrap { max-width:720px; margin:24px auto; padding:16px; }
+.card { background:var(--card); border-radius:12px; padding:16px; }
+.row { display:flex; gap:12px; margin-top:12px; }
+button {
+  flex:1; padding:12px; border:0; border-radius:10px;
+  background:var(--primary); color:#fff; font-weight:600;
+}
+.muted { font-size:12px; opacity:.7; margin-top:10px; }
