@@ -1,25 +1,115 @@
 :root {
-  --bg: #fff;
-  --fg: #111;
-  --card: #f5f7fb;
-  --primary: #0a84ff;
+  --bg: #0f1115;
+  --card: #171a21;
+  --fg: #e9eef3;
+  --muted: #a8b2bd;
+  --primary: #4da3ff;
+  --radius: 16px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
-[data-theme="dark"] {
-  --bg: #0f0f0f;
-  --fg: #f2f2f2;
-  --card: #1b1d20;
-  --primary: #64b5ff;
+
+[data-theme="light"] {
+  --bg: #f5f7fb;
+  --card: #ffffff;
+  --fg: #0f1115;
+  --muted: #5e6a78;
+  --primary: #1b78ff;
 }
-html, body {
-  margin:0; padding:0;
-  background:var(--bg); color:var(--fg);
-  font:16px system-ui,sans-serif;
+
+* {
+  box-sizing: border-box;
 }
-.wrap { max-width:720px; margin:24px auto; padding:16px; }
-.card { background:var(--card); border-radius:12px; padding:16px; }
-.row { display:flex; gap:12px; margin-top:12px; }
-button {
-  flex:1; padding:12px; border:0; border-radius:10px;
-  background:var(--primary); color:#fff; font-weight:600;
+
+html,
+body {
+  height: 100%;
 }
-.muted { font-size:12px; opacity:.7; margin-top:10px; }
+
+body {
+  margin: 0;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  display: grid;
+  place-items: start center;
+}
+
+.card {
+  width: min(680px, 100%);
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.card__header {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.card__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.card__content {
+  padding: 20px;
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.input {
+  width: 100%;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: var(--fg);
+  padding: 0 12px;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.btn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.muted {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
