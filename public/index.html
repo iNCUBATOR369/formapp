@@ -1,24 +1,39 @@
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>FormApp</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="styles.css"/>
-</head>
-<body>
-  <div class="wrap">
-    <h2>Welcome to FormApp 👋</h2>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
+    <title>FormApp</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  </head>
+  <body>
     <div class="card">
-      <input id="msg" type="text" value="This message came from the Mini App!"/>
-      <div class="row">
-        <button id="sendBtn">Send to bot</button>
-        <button id="themeBtn">Toggle theme</button>
+      <header class="card__header">
+        <h1 class="card__title">Welcome to FormApp 👋</h1>
+      </header>
+
+      <div class="card__content">
+        <label class="label" for="msg">Message</label>
+        <input
+          id="msg"
+          class="input"
+          type="text"
+          placeholder="This message came from the Mini App!"
+        />
+
+        <div class="row">
+          <button id="sendBtn" class="btn btn-primary">Send to bot</button>
+          <button id="themeBtn" class="btn btn-ghost">Toggle theme</button>
+        </div>
+
+        <p id="userInfo" class="muted"></p>
       </div>
-      <div class="muted" id="user"></div>
     </div>
-  </div>
-  <script src="app.js"></script>
-</body>
+
+    <script src="app.js"></script>
+  </body>
 </html>
