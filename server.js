@@ -1,151 +1,99 @@
-// server.js — Express + Telegraf (webhook), валидация initData, единая отправка в чат.
+import express from "express";
+import TelegramBot from "node-telegram-bot-api";
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const crypto = require('crypto');
-const path = require('path');
-const { Telegraf, Markup } = require('telegraf');
+const TOKEN = process.env.BOT_TOKEN;
+const PUBLIC_URL = process.env.PUBLIC_URL; // например: https://formapp-xvb0.onrender.com  (без слэша на конце!)
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, ''); // без завершающих /
-const PORT = process.env.PORT || 10000;
-
-if (!BOT_TOKEN || !PUBLIC_URL) {
-  console.error('ENV required: BOT_TOKEN and PUBLIC_URL');
+if (!TOKEN || !PUBLIC_URL) {
+  console.error("❌ Set BOT_TOKEN and PUBLIC_URL env vars");
   process.exit(1);
 }
 
 const app = express();
-app.use(helmet());
-app.use(morgan('tiny'));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
 
-// ---------- BOT ----------
-const bot = new Telegraf(BOT_TOKEN);
+// --- Telegram bot in webhook mode ---
+const bot = new TelegramBot(TOKEN, { webHook: true });
 
-// /start — привет + кнопка Web App
-bot.start(async (ctx) => {
-  await ctx.reply(
-    'Welcome to FormApp 👋\nTap the button below to open the mini app.',
-    Markup.inlineKeyboard([
-      Markup.button.webApp('Web App', `${PUBLIC_URL}/`)
-    ])
+// Вебхук будет: https://<host>/tg/<token>
+const WEBHOOK_PATH = `/tg/${TOKEN}`;
+const WEBHOOK_URL = `${PUBLIC_URL}${WEBHOOK_PATH}`;
+
+async function ensureWebhook() {
+  try {
+    const info = await bot.getWebHookInfo();
+    if (info.url !== WEBHOOK_URL) {
+      await bot.setWebHook(WEBHOOK_URL);
+      console.log("✅ Webhook set to:", WEBHOOK_URL);
+    } else {
+      console.log("ℹ️ Webhook already set:", WEBHOOK_URL);
+    }
+  } catch (e) {
+    console.error("Webhook error:", e.message);
+  }
+}
+await ensureWebhook();
+
+app.post(WEBHOOK_PATH, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// --- Команды ---
+bot.onText(/^\/start\b/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const kb = {
+    keyboard: [
+      [
+        {
+          text: "Open FormApp",
+          web_app: { url: PUBLIC_URL } // открытие мини-аппа из обычного меню
+        }
+      ]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  };
+
+  await bot.sendMessage(
+    chatId,
+    "Welcome to FormApp 👋\nTap the button below to open the mini app.",
+    { reply_markup: kb }
   );
 });
 
-// /ping
-bot.command('ping', (ctx) => ctx.reply('pong'));
-
-// Ловим данные, присланные через Telegram.WebApp.sendData (fallback для attach-варианта)
-bot.on('message', async (ctx, next) => {
-  const wad = ctx.message?.web_app_data?.data;
-  if (wad) {
-    let text = wad;
-    try { text = JSON.parse(wad)?.text ?? wad; } catch {}
-    await ctx.reply(`Got it: ${text}`);
-    return;
-  }
-  return next();
+bot.onText(/^\/ping\b/i, (msg) => {
+  bot.sendMessage(msg.chat.id, "pong");
 });
 
-// ---------- HELPERS ----------
-// Валидация initData по докам Telegram:
-// https://core.telegram.org/bots/webapps#validating-data-received-via-the-web-app
-function validateInitData(initData, botToken) {
-  try {
-    const urlParams = new URLSearchParams(initData);
-    const hash = urlParams.get('hash');
-    if (!hash) return false;
-    urlParams.delete('hash');
+// Приход данных из мини-аппа (из Menu и из правой кнопки «Open FormApp»):
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
 
-    const dataCheckString = Array.from(urlParams.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}=${v}`)
-      .join('\n');
+  // Если мини-апп прислал данные
+  if (msg.web_app_data && msg.web_app_data.data) {
+    let text = msg.web_app_data.data;
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed === "object" && parsed.text) text = parsed.text;
+    } catch (_) {
+      // оставляем как есть
+    }
 
-    const secretKey = crypto.createHmac('sha256', 'WebAppData')
-      .update(botToken)
-      .digest();
-
-    const calcHash = crypto.createHmac('sha256', secretKey)
-      .update(dataCheckString)
-      .digest('hex');
-
-    return calcHash === hash;
-  } catch {
-    return false;
-  }
-}
-
-function extractChatOrUserIdFromInitData(initData) {
-  // initData — это строка URLSearchParams
-  const params = new URLSearchParams(initData);
-
-  // В initData Telegram передаёт поля "user", "chat" как JSON-строки
-  const chatRaw = params.get('chat');
-  const userRaw = params.get('user');
-
-  let chatId = null;
-  let userId = null;
-  try { chatId = chatRaw ? JSON.parse(chatRaw)?.id ?? null : null; } catch {}
-  try { userId = userRaw ? JSON.parse(userRaw)?.id ?? null : null; } catch {}
-
-  return chatId || userId || null;
-}
-
-// ---------- API из Mini App ----------
-// Универсальный маршрут: мини-апп присылает text + initData; сервер валидирует и постит в чат
-app.post('/api/send', async (req, res) => {
-  const { text, initData } = req.body || {};
-  if (!text || !initData) return res.status(400).json({ ok: false, error: 'Bad payload' });
-
-  if (!validateInitData(initData, BOT_TOKEN)) {
-    return res.status(403).json({ ok: false, error: 'Invalid initData' });
-  }
-
-  const chatId = extractChatOrUserIdFromInitData(initData);
-  if (!chatId) return res.status(400).json({ ok: false, error: 'No chat/user id in initData' });
-
-  try {
-    await bot.telegram.sendMessage(chatId, `Got it: ${String(text)}`);
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('/api/send error:', e);
-    return res.status(500).json({ ok: false, error: 'internal' });
+    await bot.sendMessage(chatId, `Got it from Mini App: ${text}`);
   }
 });
 
-// ---------- STATIC ----------
-app.use(express.static(path.join(__dirname, 'public')));
+// --- статика мини-аппа ---
+app.use(express.static("public"));
 
-// Health/diagnostics
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
-app.get('/tg', (_req, res) => res.status(200).send('Use POST to deliver Telegram updates'));
-
-// ---------- WEBHOOK ----------
-app.post('/tg', async (req, res) => {
-  try {
-    await bot.handleUpdate(req.body);
-  } catch (e) {
-    console.error('handleUpdate error:', e);
-  }
-  res.status(200).end();
+// живой корень (health check)
+app.get("/", (_req, res) => {
+  res.send("FormApp is live");
 });
 
-app.listen(PORT, async () => {
-  console.log('HTTP server on', PORT);
-  try {
-    const webhookUrl = `${PUBLIC_URL}/tg`;
-    await bot.telegram.setWebhook(webhookUrl, {
-      allowed_updates: ['message', 'callback_query', 'chat_member']
-    });
-    const info = await bot.telegram.getWebhookInfo();
-    console.log('Webhook set to:', info.url);
-    console.log('Primary URL   :', PUBLIC_URL);
-  } catch (e) {
-    console.error('setWebhook error:', e);
-  }
+// Render ожидает 10000/0.0.0.0
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`HTTP server on ${PORT}`);
 });
