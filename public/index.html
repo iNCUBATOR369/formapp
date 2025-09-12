@@ -1,39 +1,44 @@
 <!doctype html>
-<html lang="en" data-theme="light">
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1"
-    />
-    <title>FormApp</title>
-    <link rel="stylesheet" href="styles.css" />
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  </head>
-  <body>
-    <div class="card">
-      <header class="card__header">
-        <h1 class="card__title">Welcome to FormApp 👋</h1>
-      </header>
-
-      <div class="card__content">
-        <label class="label" for="msg">Message</label>
-        <input
-          id="msg"
-          class="input"
-          type="text"
-          placeholder="This message came from the Mini App!"
-        />
-
-        <div class="row">
-          <button id="sendBtn" class="btn btn-primary">Send to bot</button>
-          <button id="themeBtn" class="btn btn-ghost">Toggle theme</button>
-        </div>
-
-        <p id="userInfo" class="muted"></p>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FormApp</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="brand">
+        <span class="dot"></span>
+        <h1>FormApp</h1>
       </div>
-    </div>
+      <div class="actions">
+        <button id="themeBtn" class="btn ghost">Toggle theme</button>
+        <label class="switch">
+          <input type="checkbox" id="closeSwitch" />
+          <span class="slider"></span>
+          <span class="label">Close after send</span>
+        </label>
+      </div>
+    </header>
 
-    <script src="app.js"></script>
-  </body>
+    <main class="card">
+      <label class="label">Message</label>
+      <input id="textInput" class="input" type="text" placeholder="Type anything…" />
+      <div class="row">
+        <button id="sendBtn" class="btn primary">Send to bot</button>
+      </div>
+
+      <div id="userInfo" class="muted"></div>
+    </main>
+
+    <footer class="footer">
+      <small>© FormApp</small>
+    </footer>
+  </div>
+
+  <script src="./app.js" type="module"></script>
+</body>
 </html>
