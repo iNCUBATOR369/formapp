@@ -1,115 +1,104 @@
 :root {
   --bg: #0f1115;
-  --card: #171a21;
-  --fg: #e9eef3;
-  --muted: #a8b2bd;
-  --primary: #4da3ff;
+  --fg: #e9eef4;
+  --muted: #94a3b8;
+  --card: #161a22;
+  --primary: #60a5fa;
   --radius: 16px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow: 0 10px 30px rgba(0,0,0,.25);
 }
 
-[data-theme="light"] {
+:root[data-theme="light"] {
   --bg: #f5f7fb;
+  --fg: #0f172a;
+  --muted: #64748b;
   --card: #ffffff;
-  --fg: #0f1115;
-  --muted: #5e6a78;
-  --primary: #1b78ff;
+  --primary: #2563eb;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  height: 100%;
-}
-
+* { box-sizing: border-box; }
+html, body { height: 100%; }
 body {
   margin: 0;
-  padding: 24px;
   background: var(--bg);
   color: var(--fg);
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
-    Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-  display: grid;
-  place-items: start center;
+  font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
 }
+
+/* layout */
+.container {
+  min-height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px clamp(16px, 4vw, 28px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+}
+.header, .footer {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.brand { display:flex; align-items:center; gap:12px; }
+.brand .dot { width:10px;height:10px;border-radius:50%;background:var(--primary); box-shadow:0 0 10px var(--primary); }
+.brand h1 { font-size: 20px; margin: 0; }
 
 .card {
-  width: min(680px, 100%);
   background: var(--card);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.card__header {
-  padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.card__title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.card__content {
   padding: 20px;
+  box-shadow: var(--shadow);
 }
 
-.label {
-  display: block;
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
+.row { display:flex; gap:12px; margin-top:12px; }
+.label { display:block; font-weight:600; margin-bottom:8px; }
+.muted { margin-top:14px; color: var(--muted); }
 
+/* controls */
 .input {
   width: 100%;
-  height: 44px;
+  padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: transparent;
+  border: 1px solid transparent;
+  background: color-mix(in oklab, var(--card), var(--fg) 4%);
   color: var(--fg);
-  padding: 0 12px;
   outline: none;
 }
-
-.input::placeholder {
-  color: var(--muted);
-}
-
-.row {
-  display: flex;
-  gap: 10px;
-  margin-top: 14px;
+.input:focus {
+  border-color: color-mix(in oklab, var(--primary), white 30%);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary), transparent 70%);
 }
 
 .btn {
-  height: 40px;
-  padding: 0 14px;
+  padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: white;
-}
-
-.btn-ghost {
+  border: 1px solid color-mix(in oklab, var(--fg), transparent 85%);
   background: transparent;
   color: var(--fg);
-  border-color: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
 }
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+.btn.ghost:hover { background: color-mix(in oklab, var(--fg), transparent 95%); }
 
-.muted {
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 13px;
+.switch { display:inline-flex; align-items:center; gap:10px; cursor:pointer; }
+.switch .label { color: var(--muted); font-weight:500; }
+.switch input { display:none; }
+.switch .slider {
+  width: 44px; height: 26px; border-radius: 999px;
+  background: color-mix(in oklab, var(--fg), transparent 90%);
+  position: relative; transition: .2s;
+}
+.switch .slider::after {
+  content: ""; position:absolute; top:3px; left:3px;
+  width:20px; height:20px; border-radius:50%;
+  background:white; transition:.2s;
+}
+.switch input:checked + .slider {
+  background: color-mix(in oklab, var(--primary), transparent 30%);
+}
+.switch input:checked + .slider::after {
+  transform: translateX(18px);
 }
