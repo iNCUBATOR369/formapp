@@ -1,63 +1,81 @@
-// Инициализация Telegram WebApp API
-const tg = window.Telegram.WebApp;
+const tg = window.Telegram?.WebApp;
 
-// Приводим UI к текущей цветовой схеме Telegram (light/dark)
-function applyThemeFromTelegram() {
-  const scheme = tg.colorScheme || "light";
-  document.documentElement.dataset.theme = scheme;
+// ——— Инициализация UI/темы ———
+function applyTelegramTheme() {
+  if (!tg) return;
+
+  document.body.style.setProperty("--bg", tg.themeParams?.bg_color ?? "");
+  document.body.style.setProperty("--fg", tg.themeParams?.text_color ?? "");
+  document.body.style.setProperty(
+    "--card",
+    tg.themeParams?.secondary_bg_color ?? ""
+  );
+  document.body.style.setProperty(
+    "--muted",
+    tg.themeParams?.hint_color ?? ""
+  );
+
+  document.documentElement.setAttribute(
+    "data-theme",
+    tg.colorScheme === "dark" ? "dark" : "light"
+  );
 }
-applyThemeFromTelegram();
 
-// Небольшой хелпер для изменения темы вручную
 function toggleTheme() {
-  const now =
-    document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = now;
+  const curr = document.documentElement.getAttribute("data-theme");
+  const next = curr === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+}
 
-  // Также красим «системные» цвета хедера/фона в Telegram
-  if (now === "dark") {
-    tg.setHeaderColor("#171a21");
-    tg.setBackgroundColor("#0f1115");
+function showPopup(title, message) {
+  if (tg && tg.showPopup) {
+    tg.showPopup({ title, message, buttons: [{ type: "close" }] });
   } else {
-    tg.setHeaderColor("#ffffff");
-    tg.setBackgroundColor("#f5f7fb");
+    alert(`${title}\n\n${message}`);
   }
 }
 
-tg.onEvent("themeChanged", applyThemeFromTelegram);
-tg.expand();
-tg.ready();
+// ——— Старт ———
+const input = document.getElementById("textInput");
+const sendBtn = document.getElementById("sendBtn");
+const themeBtn = document.getElementById("themeBtn");
+const closeSwitch = document.getElementById("closeSwitch");
+const userInfo = document.getElementById("userInfo");
 
-// Элементы UI
-const $msg = document.getElementById("msg");
-const $send = document.getElementById("sendBtn");
-const $theme = document.getElementById("themeBtn");
-const $user = document.getElementById("userInfo");
+if (tg) {
+  tg.expand();
+  applyTelegramTheme();
+  tg.onEvent("themeChanged", applyTelegramTheme);
 
-// Пишем юзера (если Telegram дал)
-if (tg.initDataUnsafe?.user) {
-  const u = tg.initDataUnsafe.user;
-  const name = [u.first_name, u.last_name].filter(Boolean).join(" ");
-  $user.textContent =
-    `User: ${name} ${u.username ? `(@${u.username})` : ""}`.trim();
+  const user = tg.initDataUnsafe?.user;
+  if (user) {
+    userInfo.textContent = `User: @${user.username ?? user.id}`;
+  }
+} else {
+  userInfo.textContent = "Running outside Telegram";
 }
 
-// Отправка сообщения — ЕДИНЫМ способом через tg.sendData
-// Это одинаково работает и из Menu Web App, и из "Web App"-кнопки в чате.
-$send.addEventListener("click", () => {
-  const text =
-    ($msg.value || "This message came from the Mini App!").slice(0, 4096);
+themeBtn.addEventListener("click", () => toggleTheme());
 
-  tg.sendData(
-    JSON.stringify({
-      type: "form",
-      text
-    })
-  );
+sendBtn.addEventListener("click", () => {
+  const text = input.value.trim() || "This message came from the Mini App!";
+  const payload = {
+    type: "form",
+    text,
+    ts: Date.now()
+  };
 
-  // Закрываем мини-апп сразу — сообщение придёт боту как web_app_data
-  tg.close();
+  if (!tg || !tg.sendData) {
+    showPopup("Error", "Telegram WebApp API not available.");
+    return;
+  }
+
+  // Отправляем в бота. Бот ответит в чат, ловя web_app_data
+  tg.sendData(JSON.stringify(payload));
+
+  showPopup("Telegram", "Sent!");
+  if (closeSwitch.checked) {
+    // Закрывать по желанию пользователя
+    tg.close();
+  }
 });
-
-// Переключение темы
-$theme.addEventListener("click", toggleTheme);
